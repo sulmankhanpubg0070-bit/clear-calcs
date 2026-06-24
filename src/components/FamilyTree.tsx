@@ -176,11 +176,35 @@ const FamilyTree = () => {
           </Button>
           <Sheet open={membersOpen} onOpenChange={setMembersOpen}>
             <SheetTrigger asChild>
-              <Button variant="secondary" size="sm">
-                <Users className="mr-1 h-4 w-4" /> All members
+              <Button
+                variant="secondary"
+                size="sm"
+                aria-label={`Open all members list (${members.length} members)`}
+                aria-haspopup="dialog"
+                aria-expanded={membersOpen}
+                aria-controls="members-sheet"
+                className={cn(
+                  "min-h-11 min-w-11 gap-1.5 rounded-xl",
+                  "focus-visible:outline-none focus-visible:ring-2",
+                  "focus-visible:ring-ring focus-visible:ring-offset-2",
+                  "focus-visible:ring-offset-background",
+                  "transition-transform active:scale-95",
+                )}
+              >
+                <Users className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden sm:inline">All members</span>
+                <span
+                  aria-hidden="true"
+                  className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/20 px-1.5 text-xs font-semibold text-primary"
+                >
+                  {members.length}
+                </span>
               </Button>
             </SheetTrigger>
-            <SheetContent className="w-full sm:max-w-md overflow-y-auto bg-card border-border/60">
+            <SheetContent
+              id="members-sheet"
+              className="w-full sm:max-w-md overflow-y-auto bg-card border-border/60"
+            >
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
                   <Users className="h-4 w-4" /> All members ({members.length})
