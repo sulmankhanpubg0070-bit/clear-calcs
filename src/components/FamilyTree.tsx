@@ -258,62 +258,6 @@ const FamilyTree = () => {
         )}
       </section>
 
-      {/* All members list */}
-      <section className="relative z-10 rounded-3xl border border-border/60 bg-card p-4 sm:p-6">
-        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-          <Users className="h-4 w-4" /> All members
-        </h2>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {members.map((m) => {
-            const parent = members.find((p) => p.id === m.parentId);
-            const spouse = members.find((p) => p.id === m.spouseId);
-            return (
-              <li
-                key={m.id}
-                className="flex items-center justify-between gap-3 rounded-2xl bg-muted/40 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <GenderDot gender={m.gender} />
-                    <span className="font-medium text-foreground truncate">
-                      {m.name}
-                    </span>
-                    {m.birthYear && (
-                      <span className="text-xs text-muted-foreground">
-                        ({m.birthYear})
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                    {parent ? `Child of ${parent.name}` : "Root"}
-                    {spouse ? ` • Spouse: ${spouse.name}` : ""}
-                  </div>
-                </div>
-                <div className="flex shrink-0 gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => openEdit(m)}
-                    aria-label={`Edit ${m.name}`}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    onClick={() => remove(m.id)}
-                    aria-label={`Delete ${m.name}`}
-                    className="text-destructive hover:text-destructive"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
-
       <MemberDialog
         key={editing?.id ?? "new"}
         open={dialogOpen}
