@@ -22,6 +22,7 @@ export default {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+          glow: "hsl(var(--primary-glow))",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -50,6 +51,10 @@ export default {
         operator: {
           DEFAULT: "hsl(var(--operator))",
           foreground: "hsl(var(--operator-foreground))",
+        },
+        equals: {
+          DEFAULT: "hsl(var(--equals))",
+          foreground: "hsl(var(--equals-foreground))",
         },
         digit: {
           DEFAULT: "hsl(var(--digit))",
