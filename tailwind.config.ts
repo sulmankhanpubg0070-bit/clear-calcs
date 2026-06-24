@@ -51,6 +51,10 @@ export default {
           DEFAULT: "hsl(var(--operator))",
           foreground: "hsl(var(--operator-foreground))",
         },
+        equals: {
+          DEFAULT: "hsl(var(--equals))",
+          foreground: "hsl(var(--equals-foreground))",
+        },
         digit: {
           DEFAULT: "hsl(var(--digit))",
           foreground: "hsl(var(--digit-foreground))",
