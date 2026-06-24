@@ -195,11 +195,15 @@ const Calculator = () => {
   };
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 px-4 py-6">
+    <div className="relative mx-auto flex min-h-screen w-full max-w-md flex-col gap-4 px-4 py-6 overflow-hidden">
+      {/* Ambient glow */}
+      <div className="pointer-events-none absolute -top-20 -right-20 h-48 w-48 rounded-full bg-primary/30 blur-[100px]" />
+      <div className="pointer-events-none absolute -bottom-20 -left-20 h-48 w-48 rounded-full bg-accent/30 blur-[100px]" />
+
       {/* Display */}
       <section
         aria-label="Calculator display"
-        className="rounded-3xl bg-card p-6 shadow-[var(--shadow-display)] border border-border/40"
+        className="relative z-10 rounded-3xl bg-card p-6 border border-border/60"
       >
         <div className="min-h-6 text-right text-sm font-medium text-muted-foreground tabular-nums truncate">
           {expression || "\u00A0"}
@@ -207,7 +211,9 @@ const Calculator = () => {
         <div
           className={cn(
             "mt-2 text-right font-semibold tabular-nums tracking-tight break-all",
-            errored ? "text-destructive text-3xl" : "text-foreground text-5xl sm:text-6xl",
+            errored
+              ? "text-destructive text-3xl"
+              : "text-foreground text-5xl sm:text-6xl drop-shadow-[0_0_20px_hsl(var(--primary)/0.6)]",
           )}
           aria-live="polite"
         >
@@ -216,7 +222,7 @@ const Calculator = () => {
       </section>
 
       {/* Keypad */}
-      <section aria-label="Calculator keypad" className="grid grid-cols-4 gap-3">
+      <section aria-label="Calculator keypad" className="relative z-10 grid grid-cols-4 gap-3">
         <CalcKey variant="function" onClick={resetAll} ariaLabel="Clear">
           AC
         </CalcKey>
@@ -250,11 +256,11 @@ const Calculator = () => {
         </CalcKey>
         <CalcKey variant="digit" onClick={() => inputDigit("0")}>0</CalcKey>
         <CalcKey variant="digit" onClick={inputDecimal} ariaLabel="Decimal point">.</CalcKey>
-        <CalcKey variant="operator" onClick={equals} ariaLabel="Equals">=</CalcKey>
+        <CalcKey variant="equals" onClick={equals} ariaLabel="Equals">=</CalcKey>
       </section>
 
       {/* History */}
-      <section aria-label="Calculation history" className="rounded-3xl bg-card border border-border/40 p-4">
+      <section aria-label="Calculation history" className="relative z-10 rounded-3xl bg-card border border-border/60 p-4">
         <header className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <History className="h-4 w-4" />
@@ -299,7 +305,7 @@ const Calculator = () => {
 };
 
 interface CalcKeyProps {
-  variant: "digit" | "operator" | "function";
+  variant: "digit" | "operator" | "function" | "equals";
   onClick: () => void;
   ariaLabel?: string;
   children: React.ReactNode;
@@ -313,12 +319,16 @@ const CalcKey = ({ variant, onClick, ariaLabel, children }: CalcKeyProps) => {
       className={cn(
         "h-16 sm:h-18 rounded-2xl text-2xl font-medium tabular-nums",
         "flex items-center justify-center select-none",
-        "shadow-[var(--shadow-key)] transition-all duration-100",
+        "transition-all duration-100",
         "active:scale-95 active:brightness-110",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        variant === "digit" && "bg-digit text-digit-foreground hover:bg-digit/80",
-        variant === "function" && "bg-function-key text-function-key-foreground hover:bg-function-key/80",
-        variant === "operator" && "bg-operator text-operator-foreground hover:bg-operator/90 font-semibold",
+        variant === "digit" && "bg-digit text-digit-foreground hover:bg-digit/70",
+        variant === "function" &&
+          "bg-function-key text-function-key-foreground hover:bg-function-key/80 font-bold",
+        variant === "operator" &&
+          "bg-operator text-operator-foreground hover:bg-primary-glow font-semibold shadow-[var(--shadow-key)]",
+        variant === "equals" &&
+          "bg-equals text-equals-foreground hover:brightness-110 font-bold shadow-[var(--shadow-equals)]",
       )}
     >
       {children}
