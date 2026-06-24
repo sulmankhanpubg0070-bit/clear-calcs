@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -339,18 +339,140 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
     (m) => !m.parentId && isPrimaryInCouple(m),
   );
 
+  // Build keyboard navigation map: up / down / left / right per member id.
+  const nav = useMemo(() => {
+    const map = new Map<
+      string,
+      { up?: string; down?: string; left?: string; right?: string; depth: number }
+    >();
+    const byDepth: string[][] = [];
+
+    const visit = (m: Member, depth: number) => {
+      if (!byDepth[depth]) byDepth[depth] = [];
+      byDepth[depth].push(m.id);
+      const spouse = m.spouseId ? byId[m.spouseId] : undefined;
+      if (spouse) byDepth[depth].push(spouse.id);
+      const children = childrenOfCouple(m.id, m.spouseId).filter(isPrimaryInCouple);
+      for (const c of children) visit(c, depth + 1);
+    };
+    for (const r of roots) visit(r, 0);
+
+    byDepth.forEach((arr, d) => {
+      arr.forEach((id, i) => {
+        const entry = map.get(id) ?? { depth: d };
+        entry.depth = d;
+        if (i > 0) entry.left = arr[i - 1];
+        if (i < arr.length - 1) entry.right = arr[i + 1];
+        map.set(id, entry);
+      });
+    });
+
+    for (const m of members) {
+      const entry = map.get(m.id) ?? { depth: 0 };
+      let parentId = m.parentId ?? undefined;
+      if (!parentId && m.spouseId) {
+        parentId = byId[m.spouseId]?.parentId ?? undefined;
+      }
+      if (parentId) entry.up = parentId;
+      const children = childrenOfCouple(m.id, m.spouseId).filter(isPrimaryInCouple);
+      if (children.length) entry.down = children[0].id;
+      map.set(m.id, entry);
+    }
+    return map;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members]);
+
+  const [focusedId, setFocusedId] = useState<string | null>(
+    () => roots[0]?.id ?? members[0]?.id ?? null,
+  );
+
+  // If the focused member is removed, reset to a valid one.
+  useEffect(() => {
+    if (focusedId && !byId[focusedId]) {
+      setFocusedId(roots[0]?.id ?? members[0]?.id ?? null);
+    }
+  }, [byId, focusedId, members, roots]);
+
+  const refs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const registerRef = (id: string) => (el: HTMLDivElement | null) => {
+    if (el) refs.current.set(id, el);
+    else refs.current.delete(id);
+  };
+
+  const focusMember = (id: string) => {
+    setFocusedId(id);
+    // wait a tick so a newly-mounted node is focusable
+    requestAnimationFrame(() => refs.current.get(id)?.focus());
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, id: string) => {
+    const entry = nav.get(id);
+    if (!entry) return;
+    switch (e.key) {
+      case "ArrowUp":
+        if (entry.up) {
+          e.preventDefault();
+          focusMember(entry.up);
+        }
+        break;
+      case "ArrowDown":
+        if (entry.down) {
+          e.preventDefault();
+          focusMember(entry.down);
+        }
+        break;
+      case "ArrowLeft":
+        if (entry.left) {
+          e.preventDefault();
+          focusMember(entry.left);
+        }
+        break;
+      case "ArrowRight":
+        if (entry.right) {
+          e.preventDefault();
+          focusMember(entry.right);
+        }
+        break;
+      case "Enter":
+      case " ": {
+        e.preventDefault();
+        const m = byId[id];
+        if (m) onEdit(m);
+        break;
+      }
+      case "Delete":
+      case "Backspace": {
+        e.preventDefault();
+        onDelete(id);
+        break;
+      }
+    }
+  };
+
+  const cardProps = (m: Member) => ({
+    member: m,
+    onEdit,
+    onDelete,
+    innerRef: registerRef(m.id),
+    tabIndex: focusedId === m.id ? 0 : -1,
+    isFocused: focusedId === m.id,
+    ariaLevel: (nav.get(m.id)?.depth ?? 0) + 1,
+    onFocus: () => setFocusedId(m.id),
+    onKeyDown: (e: React.KeyboardEvent) => handleKeyDown(e, m.id),
+  });
+
   const renderNode = (m: Member, depth = 0): JSX.Element => {
     const spouse = m.spouseId ? byId[m.spouseId] : undefined;
     const children = childrenOfCouple(m.id, m.spouseId).filter(isPrimaryInCouple);
 
     return (
-      <li key={m.id} className="flex flex-col items-center">
+      <li key={m.id} role="none" className="flex flex-col items-center">
         <div className="flex items-center gap-2">
-          <PersonCard member={m} onEdit={onEdit} onDelete={onDelete} />
+          <PersonCard {...cardProps(m)} />
           {spouse && (
             <>
               <div className="h-px w-6 bg-primary/60" aria-hidden />
-              <PersonCard member={spouse} onEdit={onEdit} onDelete={onDelete} />
+              <PersonCard {...cardProps(spouse)} />
             </>
           )}
         </div>
@@ -358,7 +480,7 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
         {children.length > 0 && (
           <>
             <div className="h-6 w-px bg-border" aria-hidden />
-            <ul className="relative flex items-start gap-6 sm:gap-10 pt-0">
+            <ul role="group" className="relative flex items-start gap-6 sm:gap-10 pt-0">
               {/* Horizontal connector */}
               {children.length > 1 && (
                 <div className="absolute left-0 right-0 top-0 h-px bg-border" />
@@ -377,21 +499,39 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
   };
 
   return (
-    <ul className="flex min-w-max items-start justify-center gap-12">
+    <ul
+      role="tree"
+      aria-label="Family tree. Use arrow keys to navigate, Enter to edit."
+      className="flex min-w-max items-start justify-center gap-12 focus:outline-none"
+    >
       {roots.map((r) => renderNode(r))}
     </ul>
   );
 };
 
+interface PersonCardProps {
+  member: Member;
+  onEdit: (m: Member) => void;
+  onDelete: (id: string) => void;
+  innerRef?: (el: HTMLDivElement | null) => void;
+  tabIndex?: number;
+  isFocused?: boolean;
+  ariaLevel?: number;
+  onFocus?: () => void;
+  onKeyDown?: (e: React.KeyboardEvent) => void;
+}
+
 const PersonCard = ({
   member,
   onEdit,
   onDelete,
-}: {
-  member: Member;
-  onEdit: (m: Member) => void;
-  onDelete: (id: string) => void;
-}) => {
+  innerRef,
+  tabIndex = -1,
+  isFocused,
+  ariaLevel,
+  onFocus,
+  onKeyDown,
+}: PersonCardProps) => {
   const ring =
     member.gender === "male"
       ? "ring-primary/50 shadow-[0_0_20px_hsl(var(--primary)/0.25)]"
@@ -408,9 +548,19 @@ const PersonCard = ({
 
   return (
     <div
+      ref={innerRef}
+      role="treeitem"
+      aria-level={ariaLevel}
+      aria-label={`${member.name}${member.birthYear ? `, born ${member.birthYear}` : ""}. Press Enter to edit, Delete to remove.`}
+      tabIndex={tabIndex}
+      onFocus={onFocus}
+      onKeyDown={onKeyDown}
+      onClick={onFocus}
       className={cn(
         "group relative w-32 sm:w-36 rounded-2xl bg-muted/60 backdrop-blur-sm px-3 py-3 text-center",
-        "ring-1 transition-all hover:bg-muted",
+        "ring-1 transition-all hover:bg-muted cursor-pointer",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+        isFocused && "ring-2 ring-primary",
         ring,
       )}
     >
