@@ -8,45 +8,50 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    --background: 230 25% 7%;
-    --foreground: 220 15% 95%;
+    /* Electric ultraviolet theme */
+    --background: 260 65% 4%;            /* #070410 */
+    --foreground: 0 0% 100%;
 
-    --card: 230 22% 11%;
-    --card-foreground: 220 15% 95%;
+    --card: 262 51% 9%;                  /* #130b25 */
+    --card-foreground: 0 0% 100%;
 
-    --popover: 230 22% 11%;
-    --popover-foreground: 220 15% 95%;
+    --popover: 262 51% 9%;
+    --popover-foreground: 0 0% 100%;
 
-    --primary: 25 95% 58%;
-    --primary-foreground: 230 25% 7%;
+    --primary: 251 93% 67%;              /* #7c5dfa */
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 251 100% 72%;        /* #8b6fff */
 
-    --secondary: 230 18% 18%;
-    --secondary-foreground: 220 15% 95%;
+    --secondary: 262 47% 20%;            /* #2d1b4d */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 230 18% 15%;
-    --muted-foreground: 220 10% 65%;
+    --muted: 262 53% 15%;                /* #1e113a */
+    --muted-foreground: 251 60% 75%;
 
-    --accent: 230 18% 22%;
-    --accent-foreground: 220 15% 95%;
+    --accent: 287 76% 49%;               /* #c026d3 magenta */
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 75% 60%;
-    --destructive-foreground: 220 15% 98%;
+    --destructive: 0 80% 65%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 230 18% 18%;
-    --input: 230 18% 18%;
-    --ring: 25 95% 58%;
+    --border: 262 47% 20%;
+    --input: 262 47% 20%;
+    --ring: 251 93% 67%;
 
-    --operator: 25 95% 58%;
-    --operator-foreground: 230 25% 7%;
-    --digit: 230 18% 20%;
-    --digit-foreground: 220 15% 95%;
-    --function-key: 230 15% 30%;
-    --function-key-foreground: 220 15% 95%;
+    --operator: 251 93% 67%;             /* purple operators */
+    --operator-foreground: 0 0% 100%;
+    --equals: 172 66% 56%;               /* #2dd4bf teal */
+    --equals-foreground: 262 65% 8%;     /* #0f0720 */
+    --digit: 262 53% 15%;                /* #1e113a */
+    --digit-foreground: 0 0% 95%;
+    --function-key: 262 47% 20%;         /* #2d1b4d */
+    --function-key-foreground: 287 76% 60%; /* magenta text */
 
     --radius: 1.25rem;
 
-    --shadow-display: 0 10px 40px -10px hsl(25 95% 58% / 0.15);
-    --shadow-key: 0 2px 8px -2px hsl(230 50% 2% / 0.6);
+    --shadow-display: 0 0 20px hsl(251 93% 67% / 0.6);
+    --shadow-key: 0 0 20px hsl(251 93% 67% / 0.3);
+    --shadow-equals: 0 0 25px hsl(172 66% 56% / 0.4);
 
     --sidebar-background: 0 0% 98%;
 
