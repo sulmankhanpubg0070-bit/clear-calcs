@@ -119,19 +119,18 @@ const AdminButton = ({
         <DialogTrigger asChild>
           <Button
             variant="outline"
-            size="sm"
+            size="icon"
             aria-label="Admin login"
             className={cn(
-              "min-h-11 gap-1.5 rounded-xl border-primary/40 text-primary",
-              "hover:bg-primary/10 hover:text-primary",
+              "h-11 w-11 shrink-0 rounded-full p-0 border-primary/40 bg-card/80 text-primary backdrop-blur",
+              "shadow-[0_0_16px_hsl(var(--primary)/0.3)]",
               "focus-visible:outline-none focus-visible:ring-2",
               "focus-visible:ring-ring focus-visible:ring-offset-2",
               "focus-visible:ring-offset-background",
-              "transition-transform active:scale-95",
+              "transition-transform active:scale-90",
             )}
           >
-            <Shield className="h-4 w-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Admin</span>
+            <Shield className="h-5 w-5" aria-hidden="true" />
           </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-md bg-card border-border/60">
