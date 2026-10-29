@@ -25,12 +25,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Users, Download, Upload, TreePine } from "lucide-react";
+import AdminButton from "@/components/AdminButton";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
 type Gender = "male" | "female" | "other";
 
-interface Member {
+export interface Member {
   id: string;
   name: string;
   gender: Gender;
@@ -178,24 +179,24 @@ const FamilyTree = () => {
             <SheetTrigger asChild>
               <Button
                 variant="secondary"
-                size="sm"
+                size="icon"
                 aria-label={`Open all members list (${members.length} members)`}
                 aria-haspopup="dialog"
                 aria-expanded={membersOpen}
                 aria-controls="members-sheet"
                 className={cn(
-                  "min-h-11 min-w-11 gap-1.5 rounded-xl",
+                  "relative h-11 w-11 shrink-0 rounded-full p-0",
+                  "shadow-[0_0_16px_hsl(var(--primary)/0.3)]",
                   "focus-visible:outline-none focus-visible:ring-2",
                   "focus-visible:ring-ring focus-visible:ring-offset-2",
                   "focus-visible:ring-offset-background",
-                  "transition-transform active:scale-95",
+                  "transition-transform active:scale-90",
                 )}
               >
-                <Users className="h-4 w-4" aria-hidden="true" />
-                <span className="hidden sm:inline">All members</span>
+                <Users className="h-5 w-5" aria-hidden="true" />
                 <span
                   aria-hidden="true"
-                  className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary/20 px-1.5 text-xs font-semibold text-primary"
+                  className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-accent-foreground shadow"
                 >
                   {members.length}
                 </span>
@@ -267,6 +268,14 @@ const FamilyTree = () => {
           <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
             <Plus className="mr-1 h-4 w-4" /> Add member
           </Button>
+          <AdminButton
+            members={members}
+            openAdd={openAdd}
+            openEdit={openEdit}
+            remove={remove}
+            exportJson={exportJson}
+            importJson={importJson}
+          />
         </div>
       </header>
 
@@ -345,6 +354,7 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
       string,
       { up?: string; down?: string; left?: string; right?: string; depth: number }
     >();
+    const rows = new Map<number, string[]>();
     const byDepth: string[][] = [];
 
     const visit = (m: Member, depth: number) => {
@@ -358,6 +368,7 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
     for (const r of roots) visit(r, 0);
 
     byDepth.forEach((arr, d) => {
+      rows.set(d, arr);
       arr.forEach((id, i) => {
         const entry = map.get(id) ?? { depth: d };
         entry.depth = d;
@@ -378,7 +389,7 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
       if (children.length) entry.down = children[0].id;
       map.set(m.id, entry);
     }
-    return map;
+    return { map, rows };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
 
@@ -406,7 +417,7 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent, id: string) => {
-    const entry = nav.get(id);
+    const entry = nav.map.get(id);
     if (!entry) return;
     switch (e.key) {
       case "ArrowUp":
@@ -433,6 +444,22 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
           focusMember(entry.right);
         }
         break;
+      case "Home": {
+        const row = nav.rows.get(entry.depth);
+        if (row?.length) {
+          e.preventDefault();
+          focusMember(row[0]);
+        }
+        break;
+      }
+      case "End": {
+        const row = nav.rows.get(entry.depth);
+        if (row?.length) {
+          e.preventDefault();
+          focusMember(row[row.length - 1]);
+        }
+        break;
+      }
       case "Enter":
       case " ": {
         e.preventDefault();
@@ -456,7 +483,7 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
     innerRef: registerRef(m.id),
     tabIndex: focusedId === m.id ? 0 : -1,
     isFocused: focusedId === m.id,
-    ariaLevel: (nav.get(m.id)?.depth ?? 0) + 1,
+    ariaLevel: (nav.map.get(m.id)?.depth ?? 0) + 1,
     onFocus: () => setFocusedId(m.id),
     onKeyDown: (e: React.KeyboardEvent) => handleKeyDown(e, m.id),
   });
@@ -501,7 +528,7 @@ const TreeView = ({ members, onEdit, onDelete }: TreeProps) => {
   return (
     <ul
       role="tree"
-      aria-label="Family tree. Use arrow keys to navigate, Enter to edit."
+      aria-label="Family tree. Use arrow keys to navigate, Home or End to jump to the first or last member of the level, Enter to edit."
       className="flex min-w-max items-start justify-center gap-12 focus:outline-none"
     >
       {roots.map((r) => renderNode(r))}
