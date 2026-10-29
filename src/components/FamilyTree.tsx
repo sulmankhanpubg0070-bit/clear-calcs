@@ -152,6 +152,8 @@ const FamilyTree = () => {
         />
       </div>
 
+      <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-accent/30 blur-[120px]" />
+
       {/* Header */}
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
