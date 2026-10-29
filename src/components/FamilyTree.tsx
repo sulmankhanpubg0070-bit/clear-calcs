@@ -137,8 +137,19 @@ const FamilyTree = () => {
 
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col gap-6 px-4 py-6 sm:py-10 overflow-hidden">
-      {/* Ambient glow */}
-      <div className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full bg-primary/30 blur-[120px]" />
+      {/* Admin button pinned to the top-right corner */}
+      <div className="absolute right-3 top-3 z-20 sm:right-4 sm:top-4">
+        <AdminButton
+          members={members}
+          openAdd={openAdd}
+          openEdit={openEdit}
+          remove={remove}
+          exportJson={exportJson}
+          importJson={importJson}
+        />
+      </div>
+
+      {/* Header */}
       <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-accent/30 blur-[120px]" />
 
       {/* Header */}
