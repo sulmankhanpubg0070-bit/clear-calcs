@@ -50,21 +50,66 @@ const seed: Member[] = [
   { id: "5", name: "Aap", gender: "other", birthYear: "2000", parentId: "3" },
 ];
 
+const PW_KEY = "family-tree:admin";
+
 const FamilyTree = () => {
-  const [members, setMembers] = useState<Member[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return seed;
-  });
+  const [members, setMembersRaw] = useState<Member[]>(seed);
+  const [title, setTitle] = useState("Family Tree");
+  const [password, setPassword] = useState<string | null>(() => sessionStorage.getItem(PW_KEY));
+  const isAdmin = !!password;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const dirty = useRef(false);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+    supabase.from("site_data").select("title, members").eq("id", 1).maybeSingle().then(({ data }) => {
+      if (data) {
+        setTitle(data.title);
+        setMembersRaw((data.members as unknown as Member[]) ?? []);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
+
+  const setMembers: typeof setMembersRaw = (v) => {
+    if (!isAdmin) return;
+    dirty.current = true;
+    setMembersRaw(v);
+  };
+
+  const persist = async (t: string, m: Member[]) => {
+    if (!password) return;
+    const { error } = await supabase.rpc("admin_save", {
+      _password: password,
+      _title: t,
+      _members: m as unknown as never,
+    });
+    if (error) toast.error("Save failed: " + error.message);
+  };
+
+  useEffect(() => {
+    if (!dirty.current) return;
+    dirty.current = false;
+    persist(title, members);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
+
+  const saveTitle = (t: string) => {
+    setTitle(t);
+    persist(t, members).then(() => toast.success("Title saved"));
+  };
+  const login = (pw: string) => {
+    sessionStorage.setItem(PW_KEY, pw);
+    setPassword(pw);
+  };
+  const logout = () => {
+    sessionStorage.removeItem(PW_KEY);
+    setPassword(null);
+  };
 
   const upsert = (m: Member) => {
     setMembers((prev) => {
