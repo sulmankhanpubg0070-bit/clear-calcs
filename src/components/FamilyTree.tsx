@@ -188,6 +188,11 @@ const FamilyTree = () => {
       {/* Admin button pinned to the top-right corner */}
       <div className="absolute right-3 top-3 z-20 sm:right-4 sm:top-4">
         <AdminButton
+          password={password}
+          onLogin={login}
+          onLogout={logout}
+          title={title}
+          saveTitle={saveTitle}
           members={members}
           openAdd={openAdd}
           openEdit={openEdit}
@@ -207,7 +212,7 @@ const FamilyTree = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Family Tree
+              {title}
             </h1>
             <p className="text-xs text-muted-foreground">
               {members.length} members
@@ -216,23 +221,6 @@ const FamilyTree = () => {
         </div>
 
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2 pr-14 sm:pr-16">
-          <input
-            type="file"
-            accept="application/json"
-            id="import-input"
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => document.getElementById("import-input")?.click()}
-          >
-            <Upload className="mr-1 h-4 w-4" /> Import
-          </Button>
-          <Button variant="ghost" size="sm" onClick={exportJson}>
-            <Download className="mr-1 h-4 w-4" /> Export
-          </Button>
           <Sheet open={membersOpen} onOpenChange={setMembersOpen}>
             <SheetTrigger asChild>
               <Button
@@ -295,7 +283,7 @@ const FamilyTree = () => {
                           {spouse ? ` • Spouse: ${spouse.name}` : ""}
                         </div>
                       </div>
-                      <div className="flex shrink-0 gap-1">
+                      <div className={cn("flex shrink-0 gap-1", !isAdmin && "hidden")}>
                         <Button
                           size="icon"
                           variant="ghost"
@@ -323,9 +311,11 @@ const FamilyTree = () => {
               </ul>
             </SheetContent>
           </Sheet>
-          <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
-            <Plus className="mr-1 h-4 w-4" /> Add member
-          </Button>
+          {isAdmin && (
+            <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
+              <Plus className="mr-1 h-4 w-4" /> Add member
+            </Button>
+          )}
         </div>
       </header>
 
@@ -337,7 +327,11 @@ const FamilyTree = () => {
         {members.length === 0 ? (
           <EmptyState onAdd={openAdd} />
         ) : (
-          <TreeView members={members} onEdit={openEdit} onDelete={remove} />
+          <TreeView
+            members={members}
+            onEdit={isAdmin ? openEdit : () => {}}
+            onDelete={isAdmin ? remove : () => {}}
+          />
         )}
       </section>
 
