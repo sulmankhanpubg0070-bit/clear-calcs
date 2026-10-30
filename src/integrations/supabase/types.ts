@@ -14,6 +14,21 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_secret: {
+        Row: {
+          id: number
+          password_hash: string
+        }
+        Insert: {
+          id?: number
+          password_hash: string
+        }
+        Update: {
+          id?: number
+          password_hash?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -35,6 +50,27 @@ export type Database = {
           email?: string | null
           full_name?: string | null
           id?: string
+        }
+        Relationships: []
+      }
+      site_data: {
+        Row: {
+          id: number
+          members: Json
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          id?: number
+          members?: Json
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          members?: Json
+          title?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -61,6 +97,17 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      admin_change_password: {
+        Args: { _new: string; _old: string }
+        Returns: boolean
+      }
+      admin_check: { Args: { _password: string }; Returns: boolean }
+      admin_has_password: { Args: never; Returns: boolean }
+      admin_save: {
+        Args: { _members: Json; _password: string; _title: string }
+        Returns: boolean
+      }
+      admin_setup: { Args: { _password: string }; Returns: boolean }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
