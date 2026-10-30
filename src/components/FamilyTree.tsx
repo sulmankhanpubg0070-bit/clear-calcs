@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Users, Download, Upload, TreePine } from "lucide-react";
 import AdminButton from "@/components/AdminButton";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,6 @@ export interface Member {
   spouseId?: string | null;
 }
 
-const STORAGE_KEY = "family-tree:v1";
 
 const seed: Member[] = [
   { id: "1", name: "Dada", gender: "male", birthYear: "1945", spouseId: "2" },
