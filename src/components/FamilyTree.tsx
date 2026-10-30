@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Users, Download, Upload, TreePine } from "lucide-react";
 import AdminButton from "@/components/AdminButton";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +41,6 @@ export interface Member {
   spouseId?: string | null;
 }
 
-const STORAGE_KEY = "family-tree:v1";
 
 const seed: Member[] = [
   { id: "1", name: "Dada", gender: "male", birthYear: "1945", spouseId: "2" },
@@ -50,21 +50,66 @@ const seed: Member[] = [
   { id: "5", name: "Aap", gender: "other", birthYear: "2000", parentId: "3" },
 ];
 
+const PW_KEY = "family-tree:admin";
+
 const FamilyTree = () => {
-  const [members, setMembers] = useState<Member[]>(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return seed;
-  });
+  const [members, setMembersRaw] = useState<Member[]>(seed);
+  const [title, setTitle] = useState("Family Tree");
+  const [password, setPassword] = useState<string | null>(() => sessionStorage.getItem(PW_KEY));
+  const isAdmin = !!password;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
+  const dirty = useRef(false);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(members));
+    supabase.from("site_data").select("title, members").eq("id", 1).maybeSingle().then(({ data }) => {
+      if (data) {
+        setTitle(data.title);
+        setMembersRaw((data.members as unknown as Member[]) ?? []);
+      }
+    });
+  }, []);
+
+  useEffect(() => {
+    document.title = title;
+  }, [title]);
+
+  const setMembers: typeof setMembersRaw = (v) => {
+    if (!isAdmin) return;
+    dirty.current = true;
+    setMembersRaw(v);
+  };
+
+  const persist = async (t: string, m: Member[]) => {
+    if (!password) return;
+    const { error } = await supabase.rpc("admin_save", {
+      _password: password,
+      _title: t,
+      _members: m as unknown as never,
+    });
+    if (error) toast.error("Save failed: " + error.message);
+  };
+
+  useEffect(() => {
+    if (!dirty.current) return;
+    dirty.current = false;
+    persist(title, members);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
+
+  const saveTitle = (t: string) => {
+    setTitle(t);
+    persist(t, members).then(() => toast.success("Title saved"));
+  };
+  const login = (pw: string) => {
+    sessionStorage.setItem(PW_KEY, pw);
+    setPassword(pw);
+  };
+  const logout = () => {
+    sessionStorage.removeItem(PW_KEY);
+    setPassword(null);
+  };
 
   const upsert = (m: Member) => {
     setMembers((prev) => {
@@ -143,6 +188,11 @@ const FamilyTree = () => {
       {/* Admin button pinned to the top-right corner */}
       <div className="absolute right-3 top-3 z-20 sm:right-4 sm:top-4">
         <AdminButton
+          password={password}
+          onLogin={login}
+          onLogout={logout}
+          title={title}
+          saveTitle={saveTitle}
           members={members}
           openAdd={openAdd}
           openEdit={openEdit}
@@ -162,7 +212,7 @@ const FamilyTree = () => {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              Family Tree
+              {title}
             </h1>
             <p className="text-xs text-muted-foreground">
               {members.length} members
@@ -171,23 +221,6 @@ const FamilyTree = () => {
         </div>
 
         <div className="flex flex-1 flex-wrap items-center justify-end gap-2 pr-14 sm:pr-16">
-          <input
-            type="file"
-            accept="application/json"
-            id="import-input"
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => document.getElementById("import-input")?.click()}
-          >
-            <Upload className="mr-1 h-4 w-4" /> Import
-          </Button>
-          <Button variant="ghost" size="sm" onClick={exportJson}>
-            <Download className="mr-1 h-4 w-4" /> Export
-          </Button>
           <Sheet open={membersOpen} onOpenChange={setMembersOpen}>
             <SheetTrigger asChild>
               <Button
@@ -250,7 +283,7 @@ const FamilyTree = () => {
                           {spouse ? ` • Spouse: ${spouse.name}` : ""}
                         </div>
                       </div>
-                      <div className="flex shrink-0 gap-1">
+                      <div className={cn("flex shrink-0 gap-1", !isAdmin && "hidden")}>
                         <Button
                           size="icon"
                           variant="ghost"
@@ -278,9 +311,11 @@ const FamilyTree = () => {
               </ul>
             </SheetContent>
           </Sheet>
-          <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
-            <Plus className="mr-1 h-4 w-4" /> Add member
-          </Button>
+          {isAdmin && (
+            <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
+              <Plus className="mr-1 h-4 w-4" /> Add member
+            </Button>
+          )}
         </div>
       </header>
 
@@ -292,7 +327,11 @@ const FamilyTree = () => {
         {members.length === 0 ? (
           <EmptyState onAdd={openAdd} />
         ) : (
-          <TreeView members={members} onEdit={openEdit} onDelete={remove} />
+          <TreeView
+            members={members}
+            onEdit={isAdmin ? openEdit : () => {}}
+            onDelete={isAdmin ? remove : () => {}}
+          />
         )}
       </section>
 

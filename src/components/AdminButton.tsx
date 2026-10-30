@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import type { User } from "@supabase/supabase-js";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,20 +7,23 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Shield, LogOut, Plus, Pencil, Trash2, Download, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Member } from "@/components/FamilyTree";
 
-type RoleState = "loading" | "admin" | "none";
-
 interface AdminButtonProps {
+  password: string | null;
+  onLogin: (pw: string) => void;
+  onLogout: () => void;
   members: Member[];
+  title: string;
+  saveTitle: (t: string) => void;
   openAdd: () => void;
   openEdit: (m: Member) => void;
   remove: (id: string) => void;
@@ -29,81 +31,53 @@ interface AdminButtonProps {
   importJson: (file: File) => void;
 }
 
-const AdminButton = ({
-  members,
-  openAdd,
-  openEdit,
-  remove,
-  exportJson,
-  importJson,
-}: AdminButtonProps) => {
+const AdminButton = (p: AdminButtonProps) => {
   const [open, setOpen] = useState(false);
-  const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<RoleState>("loading");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [hasPw, setHasPw] = useState<boolean | null>(null);
+  const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [titleDraft, setTitleDraft] = useState(p.title);
+  const [newPw, setNewPw] = useState("");
 
+  useEffect(() => setTitleDraft(p.title), [p.title]);
   useEffect(() => {
-    let mounted = true;
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (mounted) setUser(session?.user ?? null);
-    });
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (mounted) setUser(session?.user ?? null);
-    });
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
-  }, []);
+    if (open && !p.password)
+      supabase.rpc("admin_has_password").then(({ data }) => setHasPw(!!data));
+  }, [open, p.password]);
 
-  useEffect(() => {
-    if (!user) {
-      setRole("loading");
-      return;
-    }
-    let mounted = true;
-    setRole("loading");
-    supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", user.id)
-      .then(({ data }) => {
-        if (mounted) {
-          setRole(data?.some((r) => r.role === "admin") ? "admin" : "none");
-        }
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [user]);
-
-  const signIn = async () => {
+  const submit = async () => {
     setBusy(true);
     setError(null);
-    const { data, error: err } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-    if (err) {
-      setError(err.message);
-    } else if (data.user) {
-      setUser(data.user);
-      setEmail("");
-      setPassword("");
-      toast.success("Admin logged in");
+    if (!hasPw) {
+      const { error: e } = await supabase.rpc("admin_setup", { _password: pw });
+      if (e) setError(e.message);
+      else {
+        p.onLogin(pw);
+        toast.success("Admin password set");
+      }
+    } else {
+      const { data } = await supabase.rpc("admin_check", { _password: pw });
+      if (data) {
+        p.onLogin(pw);
+        toast.success("Admin logged in");
+      } else setError("Wrong password");
     }
+    setPw("");
     setBusy(false);
   };
 
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    setRole("loading");
-    setOpen(false);
-    toast.success("Signed out");
+  const changePw = async () => {
+    const { error: e } = await supabase.rpc("admin_change_password", {
+      _old: p.password!,
+      _new: newPw,
+    });
+    if (e) toast.error(e.message);
+    else {
+      p.onLogin(newPw);
+      setNewPw("");
+      toast.success("Password changed");
+    }
   };
 
   return (
@@ -113,179 +87,130 @@ const AdminButton = ({
         accept="application/json"
         id="admin-import-input"
         className="hidden"
-        onChange={(e) => e.target.files?.[0] && importJson(e.target.files[0])}
+        onChange={(e) => e.target.files?.[0] && p.importJson(e.target.files[0])}
       />
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>
           <Button
             variant="outline"
             size="icon"
-            aria-label="Admin login"
+            aria-label="Admin"
             className={cn(
               "h-11 w-11 shrink-0 rounded-full p-0 border-primary/40 bg-card/80 text-primary backdrop-blur",
-              "shadow-[0_0_16px_hsl(var(--primary)/0.3)]",
-              "focus-visible:outline-none focus-visible:ring-2",
-              "focus-visible:ring-ring focus-visible:ring-offset-2",
-              "focus-visible:ring-offset-background",
-              "transition-transform active:scale-90",
+              "shadow-[0_0_16px_hsl(var(--primary)/0.3)] transition-transform active:scale-90",
+              p.password && "bg-primary text-primary-foreground",
             )}
           >
             <Shield className="h-5 w-5" aria-hidden="true" />
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-md bg-card border-border/60">
-          {!user ? (
+        <DialogContent className="sm:max-w-lg bg-card border-border/60">
+          {!p.password ? (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                signIn();
+                submit();
               }}
               className="grid gap-4 py-2"
             >
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
-                  <Shield className="h-4 w-4 text-primary" /> Admin login
+                  <Shield className="h-4 w-4 text-primary" /> Admin
                 </DialogTitle>
                 <DialogDescription>
-                  Sign in with the admin account to manage the family tree.
+                  {hasPw === false
+                    ? "Pehli baar: admin password set karein (kam az kam 6 characters)."
+                    : "Admin password daalein."}
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-1.5">
-                <Label htmlFor="admin-email">Email</Label>
-                <Input
-                  id="admin-email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="admin@example.com"
-                  autoComplete="email"
-                  autoFocus
-                />
-              </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="admin-password">Password</Label>
                 <Input
                   id="admin-password"
                   type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  value={pw}
+                  onChange={(e) => setPw(e.target.value)}
                   autoComplete="current-password"
+                  autoFocus
                 />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
-              <DialogFooter>
-                <Button
-                  type="submit"
-                  disabled={busy || !email.trim() || !password}
-                  className="w-full sm:w-auto"
-                >
-                  {busy ? "Signing in…" : "Sign in"}
-                </Button>
-              </DialogFooter>
-            </form>
-          ) : role === "loading" ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              Checking access…
-            </p>
-          ) : role === "none" ? (
-            <div className="grid gap-4 py-2">
-              <DialogHeader>
-                <DialogTitle>Not an admin</DialogTitle>
-                <DialogDescription>
-                  This account does not have admin access.
-                </DialogDescription>
-              </DialogHeader>
-              <Button variant="outline" onClick={signOut}>
-                <LogOut className="mr-1 h-4 w-4" /> Sign out
+              <Button type="submit" disabled={busy || !pw || hasPw === null}>
+                {busy ? "…" : hasPw === false ? "Set password" : "Login"}
               </Button>
-            </div>
+            </form>
           ) : (
             <div className="grid gap-4">
               <DialogHeader>
                 <DialogTitle className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-primary" /> Admin panel
                 </DialogTitle>
-                <DialogDescription className="truncate">
-                  Signed in as {user.email}
-                </DialogDescription>
               </DialogHeader>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button size="sm" onClick={openAdd}>
-                  <Plus className="mr-1 h-4 w-4" /> Add member
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    document.getElementById("admin-import-input")?.click()
-                  }
-                >
-                  <Upload className="mr-1 h-4 w-4" /> Import
-                </Button>
-                <Button size="sm" variant="outline" onClick={exportJson}>
-                  <Download className="mr-1 h-4 w-4" /> Export
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={signOut}
-                  className="ml-auto"
-                >
-                  <LogOut className="mr-1 h-4 w-4" /> Sign out
-                </Button>
-              </div>
-              <ul className="grid max-h-72 gap-2 overflow-y-auto">
-                {members.map((m) => (
-                  <li
-                    key={m.id}
-                    className="flex items-center justify-between gap-3 rounded-2xl bg-muted/40 px-4 py-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={cn(
-                            "inline-block h-2.5 w-2.5 shrink-0 rounded-full",
-                            m.gender === "male" && "bg-primary",
-                            m.gender === "female" && "bg-accent",
-                            m.gender === "other" && "bg-equals",
-                          )}
-                          aria-hidden="true"
-                        />
-                        <span className="truncate font-medium text-foreground">
-                          {m.name}
-                        </span>
-                        {m.birthYear && (
-                          <span className="text-xs text-muted-foreground">
-                            ({m.birthYear})
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs capitalize text-muted-foreground">
-                        {m.gender}
-                      </div>
+              <Tabs defaultValue="members">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="members">Members</TabsTrigger>
+                  <TabsTrigger value="settings">Settings</TabsTrigger>
+                </TabsList>
+                <TabsContent value="members" className="grid gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" onClick={() => { setOpen(false); p.openAdd(); }}>
+                      <Plus className="mr-1 h-4 w-4" /> Add
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => document.getElementById("admin-import-input")?.click()}>
+                      <Upload className="mr-1 h-4 w-4" /> Import
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={p.exportJson}>
+                      <Download className="mr-1 h-4 w-4" /> Export
+                    </Button>
+                  </div>
+                  <ul className="grid max-h-72 gap-2 overflow-y-auto">
+                    {p.members.map((m) => {
+                      const parent = p.members.find((x) => x.id === m.parentId);
+                      const spouse = p.members.find((x) => x.id === m.spouseId);
+                      return (
+                        <li key={m.id} className="flex items-center justify-between gap-2 rounded-2xl bg-muted/40 px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-foreground">
+                              {m.name} {m.birthYear && <span className="text-xs text-muted-foreground">({m.birthYear})</span>}
+                            </div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {parent ? `Child of ${parent.name}` : "Root"}
+                              {spouse ? ` • Spouse: ${spouse.name}` : ""}
+                            </div>
+                          </div>
+                          <div className="flex shrink-0">
+                            <Button size="icon" variant="ghost" aria-label={`Edit ${m.name}`} onClick={() => { setOpen(false); p.openEdit(m); }}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button size="icon" variant="ghost" aria-label={`Delete ${m.name}`} className="text-destructive hover:text-destructive" onClick={() => p.remove(m.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </TabsContent>
+                <TabsContent value="settings" className="grid gap-4">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="site-title">Website title</Label>
+                    <div className="flex gap-2">
+                      <Input id="site-title" value={titleDraft} onChange={(e) => setTitleDraft(e.target.value)} />
+                      <Button onClick={() => p.saveTitle(titleDraft)}>Save</Button>
                     </div>
-                    <div className="flex shrink-0 gap-1">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => openEdit(m)}
-                        aria-label={`Edit ${m.name}`}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        onClick={() => remove(m.id)}
-                        aria-label={`Delete ${m.name}`}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor="new-pw">New admin password</Label>
+                    <div className="flex gap-2">
+                      <Input id="new-pw" type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+                      <Button variant="outline" disabled={newPw.length < 6} onClick={changePw}>Change</Button>
                     </div>
-                  </li>
-                ))}
-              </ul>
+                  </div>
+                </TabsContent>
+              </Tabs>
+              <Button variant="ghost" onClick={() => { p.onLogout(); setOpen(false); }}>
+                <LogOut className="mr-1 h-4 w-4" /> Logout
+              </Button>
             </div>
           )}
         </DialogContent>
