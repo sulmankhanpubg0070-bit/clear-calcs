@@ -29,6 +29,24 @@ export type Database = {
         }
         Relationships: []
       }
+      family_summary_ai_state: {
+        Row: {
+          blocked_status: number
+          id: number
+          message: string
+        }
+        Insert: {
+          blocked_status: number
+          id?: number
+          message: string
+        }
+        Update: {
+          blocked_status?: number
+          id?: number
+          message?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
