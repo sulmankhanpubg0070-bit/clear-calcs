@@ -16,6 +16,7 @@ import { Shield, LogOut, Plus, Pencil, Trash2, Download, Upload } from "lucide-r
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import type { Member } from "@/components/FamilyTree";
+import FamilySummary from "@/components/FamilySummary";
 
 interface AdminButtonProps {
   password: string | null;
@@ -68,8 +69,9 @@ const AdminButton = (p: AdminButtonProps) => {
   };
 
   const changePw = async () => {
+    if (!p.password) return;
     const { error: e } = await supabase.rpc("admin_change_password", {
-      _old: p.password!,
+      _old: p.password,
       _new: newPw,
     });
     if (e) toast.error(e.message);
@@ -104,7 +106,7 @@ const AdminButton = (p: AdminButtonProps) => {
             <Shield className="h-5 w-5" aria-hidden="true" />
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-lg bg-card border-border/60">
+        <DialogContent className="sm:max-w-lg max-h-[85dvh] overflow-y-auto bg-card border-border/60">
           {!p.password ? (
             <form
               onSubmit={(e) => {
@@ -147,9 +149,10 @@ const AdminButton = (p: AdminButtonProps) => {
                 </DialogTitle>
               </DialogHeader>
               <Tabs defaultValue="members">
-                <TabsList className="grid w-full grid-cols-2">
+                  <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="members">Members</TabsTrigger>
                   <TabsTrigger value="settings">Settings</TabsTrigger>
+                  <TabsTrigger value="summary">Summary</TabsTrigger>
                 </TabsList>
                 <TabsContent value="members" className="grid gap-3">
                   <div className="flex flex-wrap gap-2">
@@ -206,6 +209,9 @@ const AdminButton = (p: AdminButtonProps) => {
                       <Button variant="outline" disabled={newPw.length < 6} onClick={changePw}>Change</Button>
                     </div>
                   </div>
+                </TabsContent>
+                <TabsContent value="summary" forceMount className="data-[state=inactive]:hidden">
+                  <FamilySummary password={p.password} memberCount={p.members.length} />
                 </TabsContent>
               </Tabs>
               <Button variant="ghost" onClick={() => { p.onLogout(); setOpen(false); }}>
