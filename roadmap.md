@@ -9,6 +9,7 @@
 - [x] Password-only secure admin login
 - [x] Full website management panel for members, relationships, and website settings
 - [x] Shared website data with public viewing and admin-only changes
-- [ ] Verify panel and public website flow
-- [ ] Add admin-only AI Gateway family summary with generation, refresh, and errors
-- [ ] Verify summary generation and admin presentation
+- [ ] Verify signed-in admin panel flow — requires the website owner's admin password session
+- [x] Add admin-only AI Gateway family summary with generation, refresh, and errors
+- [x] Verify real AI Gateway output from saved tree and unauthorized endpoint rejection
+- [ ] Verify summary generation through signed-in admin panel — requires the website owner's admin password session

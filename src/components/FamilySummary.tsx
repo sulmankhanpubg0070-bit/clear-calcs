@@ -44,7 +44,7 @@ export default function FamilySummary({ password, memberCount }: Props) {
         for (const line of lines) {
           if (!line.trim()) continue;
           const chunk = JSON.parse(line);
-          if (chunk.message) throw new Error(chunk.message);
+          if (chunk.message) { setBlocked(Boolean(chunk.blocked)); throw new Error(chunk.message); }
           if (chunk.text) { text += chunk.text; setSummary(text); }
         }
         if (done) break;

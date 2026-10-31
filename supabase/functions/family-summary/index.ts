@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { z } from "npm:zod@3";
 import { createResponsesCall } from "../_shared/responses.ts";
+import { getLovableAiGatewayResponseHeaders } from "../_shared/run-id.ts";
 import { hasAdminAccess, summaryInstructions } from "./policy.ts";
 
 const bodySchema = z.object({ password: z.string().min(1).max(1024), accessRestored: z.boolean().optional() }).strict();
@@ -37,7 +38,7 @@ Deno.serve(async (req) => {
     // Capture safe gateway failures before the SDK turns them into a stream error.
     const gatewayFetch = globalThis.fetch;
     const request = new Request(req.url, { signal: req.signal });
-    const { result } = createResponsesCall(request, {
+    const { result, getRunId } = createResponsesCall(request, {
       baseURL: "https://ai.gateway.lovable.dev/v1", apiKey, model: "openai/gpt-6-astra",
       fetch: async (input, init) => {
         const response = await gatewayFetch(input, init);
@@ -73,14 +74,17 @@ Deno.serve(async (req) => {
             const next = await iterator.next();
             if (next.done) break;
             if (next.value.type === "text-delta") emit({ text: next.value.text });
-            if (next.value.type === "error") { emit({ message: upstreamFailure?.message || "AI summary was interrupted." }); break; }
+            if (next.value.type === "error") { emit({ message: upstreamFailure?.message || "AI summary was interrupted.", blocked: upstreamFailure?.blocked }); break; }
           }
           controller.close();
         } catch { emit({ message: "AI summary was interrupted." }); controller.close(); }
       },
-      cancel: () => iterator.return?.(),
+      async cancel() { await iterator.return?.(); },
     });
-    return new Response(body, { headers: { ...corsHeaders, "Content-Type": "application/x-ndjson" } });
+    const streamHeaders = getLovableAiGatewayResponseHeaders(undefined, { ...corsHeaders, "Content-Type": "application/x-ndjson" });
+    const runId = getRunId();
+    if (runId) streamHeaders.set("X-Lovable-AIG-Run-ID", runId);
+    return new Response(body, { headers: getLovableAiGatewayResponseHeaders(undefined, streamHeaders) });
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") return json("Summary stopped.", 499);
     return json("Unable to generate a family summary.", 500);
