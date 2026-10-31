@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Plus, Pencil, Trash2, Users, Download, Upload, TreePine } from "lucide-react";
 import AdminButton from "@/components/AdminButton";
+import FamilyInfo from "@/components/FamilyInfo";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -318,6 +319,8 @@ const FamilyTree = () => {
           )}
         </div>
       </header>
+
+      <FamilyInfo title={title} members={members} />
 
       {/* Tree */}
       <section
