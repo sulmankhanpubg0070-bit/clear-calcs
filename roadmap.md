@@ -1,7 +1,7 @@
 # Roadmap
 
-- [ ] Add working About, Contact and Stats buttons, with the owner's contact number
-- [ ] Verify public dialogs, contact links and live family statistics
+- [x] Add working About, Contact and Stats buttons, with the owner's contact number
+- [x] Verify public dialogs, contact links and live family statistics
 
 - [x] Enable email/password auth on Cloud backend
 - [x] Migration: profiles + user_roles (admin) + has_role + first-user-admin bootstrap
