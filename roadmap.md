@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Migrate website data and password-only admin management to MongoDB — waiting for external MongoDB account and separately hosted secure API setup; keep Cloud intact until migration is verified
+- [ ] Migrate website data and password-only admin management to MongoDB — MongoDB connection saved securely; blocked on separately hosted secure API setup and verification that its database user is restricted to family_tree; keep Cloud intact until migration is verified
 
 - [x] Add working About, Contact and Stats buttons, with the owner's contact number
 - [x] Verify public dialogs, contact links and live family statistics
