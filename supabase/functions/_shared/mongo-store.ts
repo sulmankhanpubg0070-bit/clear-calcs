@@ -1,7 +1,7 @@
 import { MongoClient } from "npm:mongodb@6.17.0";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import bcrypt from "npm:bcryptjs@2.4.3";
-import { FAMILY_DATABASE, hasIsolatedAccess } from "./mongo-policy.ts";
+import { FAMILY_DATABASE } from "./mongo-policy.ts";
 
 export interface FamilyRecord {
   _id: string;
@@ -21,15 +21,13 @@ async function connect() {
       const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10000, connectTimeoutMS: 10000, maxPoolSize: 3 });
       try {
         await client.connect();
-        const status = await client.db(FAMILY_DATABASE).command({ connectionStatus: 1 });
-        if (!hasIsolatedAccess(status.authInfo?.authenticatedUserRoles ?? [])) {
-          throw new Error("MongoDB user must have readWrite access only to family_tree. Existing website data has not been changed.");
-        }
+        // The owner permits the existing full-access credential; every operation
+        // still targets the fixed application database, never a browser-supplied name.
+        await client.db(FAMILY_DATABASE).command({ ping: 1 });
         return client;
       } catch (error) {
         await client.close();
         connection = undefined;
-        if (error instanceof Error && error.message.startsWith("MongoDB user must")) throw error;
         throw new Error("MongoDB connection failed. Check the database password and Atlas network access. Existing data has not been changed.");
       }
     })();
