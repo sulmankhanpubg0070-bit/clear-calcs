@@ -1,4 +1,3 @@
-import { supabase } from "@/integrations/supabase/client";
 import type { Member } from "@/components/FamilyTree";
 
 let mongo = false;
@@ -16,38 +15,23 @@ async function request<T>(body: Record<string, unknown>): Promise<T> {
 }
 
 export async function loadFamily() {
-  try {
     const data = await request<{ title: string; members: Member[]; revision: number }>({ action: "load" });
     mongo = true;
     revision = data.revision;
     return { ...data, migrationError: null };
-  } catch (error) {
-    if (!(error instanceof Error) || !error.message.startsWith("MongoDB user must")) throw error;
-    // Retain the working original site until isolation and migration have actually succeeded.
-    const { data, error: sourceError } = await supabase.from("site_data").select("title,members").eq("id", 1).single();
-    if (sourceError) throw new Error("Unable to load saved family data.");
-    return { title: data.title, members: data.members as unknown as Member[], migrationError: error instanceof Error ? error.message : "MongoDB is not ready." };
-  }
 }
 
 export async function hasAdminPassword() {
-  if (mongo) return true;
-  const { data, error } = await supabase.rpc("admin_has_password");
-  if (error) throw new Error(error.message);
-  return data === true;
+  return true;
 }
 
 export async function loginAdmin(password: string, setup = false) {
-  if (mongo) { await request({ action: "check", password }); return; }
-  const { data, error } = await supabase.rpc(setup ? "admin_setup" : "admin_check", { _password: password });
-  if (error) throw new Error(error.message);
-  if (data !== true) throw new Error(setup ? "Password already set. Log in again." : "Wrong password");
+  if (setup) throw new Error("Use the existing admin password.");
+  await request({ action: "check", password });
 }
 
 export async function changeAdminPassword(password: string, newPassword: string) {
-  if (mongo) { await request({ action: "change-password", password, newPassword }); return; }
-  const { data, error } = await supabase.rpc("admin_change_password", { _old: password, _new: newPassword });
-  if (error || data !== true) throw new Error(error?.message || "Password change failed.");
+  await request({ action: "change-password", password, newPassword });
 }
 
 export function saveFamily(password: string, title: string, members: Member[]) {
@@ -57,8 +41,7 @@ export function saveFamily(password: string, title: string, members: Member[]) {
       revision = result.revision;
       return;
     }
-    const { data, error } = await supabase.rpc("admin_save", { _password: password, _title: title, _members: members as unknown as never });
-    if (error || data !== true) throw new Error(error?.message || "Save failed.");
+    throw new Error("Wait for saved data to load.");
   });
   queue = save;
   return save;
