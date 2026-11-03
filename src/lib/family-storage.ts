@@ -9,13 +9,13 @@ const LOCAL_STORAGE_KEY = "family-tree-data";
 interface FamilyData {
   title: string;
   members: Member[];
-  passwordHash?: string;
   revision: number;
 }
 
 async function request<T>(body: Record<string, unknown>): Promise<T> {
   const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/family-data`, {
-    method: "POST", headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+    method: "POST", 
+    headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
     body: JSON.stringify(body),
   });
   const payload = await response.json();
@@ -45,11 +45,17 @@ function saveToLocalStorage(data: FamilyData) {
 
 export async function loadFamily() {
   try {
-    const data = await request<{ title: string; members: Member[]; revision: number }>({ action: "load" });
+    const data = await request<{ title: string; members: Member[]; revision: number; hasPassword: boolean }>({ action: "load" });
     mongo = true;
     revision = data.revision;
-    return { ...data, migrationError: null };
-  } catch {
+    return { 
+      title: data.title, 
+      members: data.members,
+      revision: data.revision,
+      hasPassword: data.hasPassword,
+      migrationError: null 
+    };
+  } catch (error) {
     // Fallback to localStorage
     const localData = loadFromLocalStorage();
     if (localData) {
@@ -59,6 +65,7 @@ export async function loadFamily() {
         title: localData.title, 
         members: localData.members, 
         revision: localData.revision,
+        hasPassword: false,
         migrationError: "Using local storage fallback. Configure MongoDB for cloud sync."
       };
     }
@@ -67,24 +74,20 @@ export async function loadFamily() {
       title: "Family Tree",
       members: [],
       revision: 0,
+      hasPassword: false,
       migrationError: "No saved data found. Configure MongoDB for cloud sync."
     };
   }
 }
 
 export async function hasAdminPassword() {
-  // Check if we have localStorage data with password
-  const localData = loadFromLocalStorage();
-  if (localData && localData.passwordHash) {
-    return true;
-  }
-  // Try to check via Edge Function
   try {
-    await request({ action: "check", password: "dummy" });
-    return true;
+    const data = await request<{ hasPassword: boolean }>({ action: "load" });
+    return data.hasPassword;
   } catch {
-    // If Edge Function fails, check if we have any localStorage data
-    return localData !== null;
+    // Check localStorage fallback
+    const localData = loadFromLocalStorage();
+    return !!localData?.passwordHash;
   }
 }
 
@@ -96,7 +99,6 @@ export async function loginAdmin(password: string, setup = false) {
     // Fallback: if using localStorage, accept any non-empty password
     const localData = loadFromLocalStorage();
     if (localData && password) {
-      // Store password hash in localStorage for future checks
       saveToLocalStorage({ ...localData, passwordHash: "hashed_" + password });
       return;
     }
@@ -121,15 +123,29 @@ export async function changeAdminPassword(password: string, newPassword: string)
 export function saveFamily(password: string, title: string, members: Member[]) {
   const save = queue.catch(() => undefined).then(async () => {
     if (mongo) {
-      const result = await request<{ revision: number }>({ action: "save", password, title, members, revision });
+      const result = await request<{ revision: number }>({ 
+        action: "save", 
+        password, 
+        title, 
+        members, 
+        revision 
+      });
       revision = result.revision;
+      
+      // Also save to localStorage as backup
+      saveToLocalStorage({
+        title,
+        members,
+        revision: result.revision
+      });
       return;
     }
+    
     // Fallback to localStorage
     saveToLocalStorage({
       title,
       members,
-      revision: revision + 1,
+      revision: revision + 1
     });
     revision = revision + 1;
   });

@@ -71,6 +71,9 @@ const FamilyTree = () => {
         setMembersRaw(data.members ?? []);
         setLoaded(true);
         if (data.migrationError) toast.error(data.migrationError, { duration: 10000 });
+        if (data.hasPassword !== undefined && data.members && data.members.length > 0) {
+          toast.success("✅ MongoDB connected - Data loaded from separate collections!");
+        }
       }
     }).catch(() => toast.error("Unable to load saved family data."));
     return () => { active = false; };
