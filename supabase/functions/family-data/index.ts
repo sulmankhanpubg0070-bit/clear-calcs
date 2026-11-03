@@ -4,6 +4,7 @@ import { MongoClient } from "npm:mongodb@6.17.0";
 import bcrypt from "npm:bcryptjs@2.4.3";
 import { FAMILY_DATABASE } from "../_shared/mongo-policy.ts";
 
+// Schema definitions
 const password = z.string().min(1).max(72);
 const member = z.object({
   id: z.string().min(1).max(128),
@@ -26,159 +27,190 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify(data),
   headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } 
 });
 
-// MongoDB connection helper
-async function getClient() {
-  const uri = Deno.env.get("MONGODB_URI");
-  if (!uri) throw new Error("MongoDB connection is not configured.");
-  
-  const client = new MongoClient(uri, { 
-    serverSelectionTimeoutMS: 10000, 
-    connectTimeoutMS: 10000, 
-    maxPoolSize: 3 
-  });
-  
-  try {
-    await client.connect();
-    await client.db(FAMILY_DATABASE).command({ ping: 1 });
-    return client;
-  } catch (error) {
-    await client.close();
-    throw new Error("MongoDB connection failed. Check the database password and Atlas network access.");
+// MongoDB connection with caching
+let cachedClient: MongoClient | null = null;
+let clientPromise: Promise<MongoClient> | null = null;
+
+async function getClient(): Promise<MongoClient> {
+  if (cachedClient) {
+    return cachedClient;
   }
+  
+  if (!clientPromise) {
+    const uri = Deno.env.get("MONGODB_URI");
+    if (!uri) {
+      throw new Error("MongoDB connection is not configured. Set MONGODB_URI secret.");
+    }
+    
+    clientPromise = (async () => {
+      const client = new MongoClient(uri, { 
+        serverSelectionTimeoutMS: 10000, 
+        connectTimeoutMS: 10000, 
+        maxPoolSize: 3 
+      });
+      
+      try {
+        await client.connect();
+        await client.db(FAMILY_DATABASE).command({ ping: 1 });
+        cachedClient = client;
+        return client;
+      } catch (error) {
+        await client.close();
+        throw new Error(`MongoDB connection failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    })();
+  }
+  
+  return clientPromise;
 }
 
-// Helper to get collections
-async function getCollections() {
+// Get database collections
+async function getDb() {
   const client = await getClient();
-  const db = client.db(FAMILY_DATABASE);
-  return {
-    websiteState: db.collection("website_state"),
-    memberData: db.collection("member_data"),
-    adminCredentials: db.collection("admin_credentials"),
-    client
-  };
+  return client.db(FAMILY_DATABASE);
 }
 
-// Helper to close connection
-async function closeClient(client: MongoClient) {
-  try {
-    await client.close();
-  } catch {}
-}
-
-// Password verification
-async function verifyPassword(password: string, hash: string) {
+// Password helpers
+async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
 }
 
-// Password hashing
-async function hashPassword(password: string) {
+async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ message: "Only POST requests are allowed." }, 405);
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
   
-  let client: MongoClient | null = null;
+  if (req.method !== "POST") {
+    return json({ message: "Only POST requests are allowed." }, 405);
+  }
   
   try {
-    const input = schema.safeParse(await req.json().catch(() => null));
-    if (!input.success) return json({ message: "Invalid request. Check the entered data." }, 400);
+    const body = await req.json().catch(() => null);
+    const input = schema.safeParse(body);
     
-    const { websiteState, memberData, adminCredentials } = await getCollections();
-    client = (await getCollections()).client;
+    if (!input.success) {
+      return json({ message: "Invalid request. Check the entered data.", error: input.error.format() }, 400);
+    }
     
-    // Load website state
-    if (input.data.action === "load") {
+    const db = await getDb();
+    const websiteState = db.collection("website_state");
+    const memberData = db.collection("member_data");
+    const adminCredentials = db.collection("admin_credentials");
+    
+    const action = input.data.action;
+    
+    // LOAD: Get website state, members, and check if password exists
+    if (action === "load") {
       const [state, members, admin] = await Promise.all([
         websiteState.findOne({ _id: "family-tree" }),
         memberData.findOne({ _id: "family-tree" }),
         adminCredentials.findOne({ _id: "family-tree" })
       ]);
       
+      // Create default records if they don't exist
       if (!state) {
-        // Create default state if doesn't exist
         await websiteState.insertOne({
           _id: "family-tree",
           title: "Family Tree",
           revision: 0
         });
+      }
+      
+      if (!members) {
         await memberData.insertOne({
           _id: "family-tree",
           members: []
         });
-        
-        return json({
-          title: "Family Tree",
-          members: [],
-          revision: 0,
-          hasPassword: !!admin?.passwordHash
-        });
       }
       
+      const resultState = state || { title: "Family Tree", revision: 0 };
+      const resultMembers = members || { members: [] };
+      
       return json({
-        title: state.title,
-        members: members?.members || [],
-        revision: state.revision,
+        title: resultState.title,
+        members: resultMembers.members,
+        revision: resultState.revision,
         hasPassword: !!admin?.passwordHash
       });
     }
     
-    // Check password
-    if (input.data.action === "check") {
+    // CHECK: Verify admin password
+    if (action === "check") {
       const admin = await adminCredentials.findOne({ _id: "family-tree" });
+      
       if (!admin || !admin.passwordHash) {
-        // If no admin in MongoDB, create one with the provided password
+        // First time: create admin with this password
         const hash = await hashPassword(input.data.password);
         await adminCredentials.updateOne(
           { _id: "family-tree" },
           { $set: { passwordHash: hash } },
           { upsert: true }
         );
-        return json({ valid: true });
+        return json({ valid: true, message: "Admin created" });
       }
       
       const isValid = await verifyPassword(input.data.password, admin.passwordHash);
-      if (!isValid) return json({ message: "Wrong password" }, 403);
+      if (!isValid) {
+        return json({ message: "Wrong password" }, 403);
+      }
       return json({ valid: true });
     }
     
-    // Change password
-    if (input.data.action === "change-password") {
+    // CHANGE-PASSWORD: Update admin password
+    if (action === "change-password") {
       const admin = await adminCredentials.findOne({ _id: "family-tree" });
-      if (!admin) return json({ message: "Admin not found" }, 404);
+      
+      if (!admin) {
+        return json({ message: "Admin not found" }, 404);
+      }
       
       const isValid = await verifyPassword(input.data.password, admin.passwordHash);
-      if (!isValid) return json({ message: "Wrong password" }, 403);
+      if (!isValid) {
+        return json({ message: "Wrong password" }, 403);
+      }
       
       const hash = await hashPassword(input.data.newPassword);
-      await adminCredentials.updateOne(
+      const result = await adminCredentials.updateOne(
         { _id: "family-tree", passwordHash: admin.passwordHash },
         { $set: { passwordHash: hash } }
       );
-      return json({ saved: true });
+      
+      if (!result.matchedCount) {
+        return json({ message: "Password changed elsewhere. Try again." }, 409);
+      }
+      
+      return json({ saved: true, message: "Password changed" });
     }
     
-    // Save data
-    if (input.data.action === "save") {
-      // Verify password first
-      const admin = await adminCredentials.findOne({ _id: "family-tree" });
-      if (!admin) return json({ message: "Admin not found" }, 404);
+    // SAVE: Save website state and members to separate collections
+    if (action === "save") {
+      const { password, title, members, revision } = input.data;
       
-      const isValid = await verifyPassword(input.data.password, admin.passwordHash);
-      if (!isValid) return json({ message: "Wrong password" }, 403);
+      // Verify password
+      const admin = await adminCredentials.findOne({ _id: "family-tree" });
+      if (!admin) {
+        return json({ message: "Admin not found" }, 404);
+      }
+      
+      const isValid = await verifyPassword(password, admin.passwordHash);
+      if (!isValid) {
+        return json({ message: "Wrong password" }, 403);
+      }
       
       // Validate member IDs are unique
-      const ids = new Set(input.data.members.map((item) => item.id));
-      if (ids.size !== input.data.members.length) {
+      const ids = new Set(members.map((m: { id: string }) => m.id));
+      if (ids.size !== members.length) {
         return json({ message: "Member IDs must be unique." }, 400);
       }
       
       // Save to website_state collection
       const stateResult = await websiteState.updateOne(
-        { _id: "family-tree", revision: input.data.revision },
-        { $set: { title: input.data.title }, $inc: { revision: 1 } }
+        { _id: "family-tree", revision },
+        { $set: { title }, $inc: { revision: 1 } }
       );
       
       if (!stateResult.matchedCount) {
@@ -188,23 +220,18 @@ Deno.serve(async (req) => {
       // Save to member_data collection
       await memberData.updateOne(
         { _id: "family-tree" },
-        { $set: { members: input.data.members } },
+        { $set: { members } },
         { upsert: true }
       );
       
-      return json({ saved: true, revision: input.data.revision + 1 });
+      return json({ saved: true, revision: revision + 1, message: "Data saved to MongoDB" });
     }
     
     return json({ message: "Invalid action" }, 400);
     
   } catch (error) {
-    const message = error instanceof Error && /^(MongoDB |Unable to (copy|access))/.test(error.message) 
-      ? error.message 
-      : "Unable to access website data. No changes were saved.";
-    return json({ message }, 503);
-  } finally {
-    if (client) {
-      await closeClient(client);
-    }
+    const message = error instanceof Error ? error.message : "Unable to access website data. No changes were saved.";
+    console.error("Edge Function Error:", error);
+    return json({ message, error: error instanceof Error ? error.stack : undefined }, 503);
   }
 });
