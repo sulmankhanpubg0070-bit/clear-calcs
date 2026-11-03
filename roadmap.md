@@ -1,6 +1,7 @@
 # Roadmap
 
-- [ ] Migrate website data and password-only admin management to MongoDB — MongoDB connection saved securely; blocked on separately hosted secure API setup and verification that its database user is restricted to family_tree; keep Cloud intact until migration is verified
+- [x] Add and deploy secure MongoDB data function, storage adapter, serialized saves and matching summary password/data access; isolation tests pass and original tree remains visible
+- [ ] Complete MongoDB migration and verify real admin saving — blocked: live MongoDB user roles are not restricted to readWrite on family_tree only; Atlas permissions must be corrected first; no original data changed
 
 - [x] Add working About, Contact and Stats buttons, with the owner's contact number
 - [x] Verify public dialogs, contact links and live family statistics
