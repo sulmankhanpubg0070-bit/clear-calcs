@@ -27,7 +27,7 @@ import {
 import { Plus, Pencil, Trash2, Users, Download, Upload, TreePine } from "lucide-react";
 import AdminButton from "@/components/AdminButton";
 import FamilyInfo from "@/components/FamilyInfo";
-import { supabase } from "@/integrations/supabase/client";
+import { loadFamily, saveFamily } from "@/lib/family-storage";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -62,14 +62,19 @@ const FamilyTree = () => {
   const [editing, setEditing] = useState<Member | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const dirty = useRef(false);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    supabase.from("site_data").select("title, members").eq("id", 1).maybeSingle().then(({ data }) => {
-      if (data) {
+    let active = true;
+    loadFamily().then((data) => {
+      if (active) {
         setTitle(data.title);
-        setMembersRaw((data.members as unknown as Member[]) ?? []);
+        setMembersRaw(data.members ?? []);
+        setLoaded(true);
+        if (data.migrationError) toast.error(data.migrationError, { duration: 10000 });
       }
-    });
+    }).catch(() => toast.error("Unable to load saved family data."));
+    return () => { active = false; };
   }, []);
 
   useEffect(() => {
@@ -77,31 +82,25 @@ const FamilyTree = () => {
   }, [title]);
 
   const setMembers: typeof setMembersRaw = (v) => {
-    if (!isAdmin) return;
+    if (!isAdmin || !loaded) return;
     dirty.current = true;
     setMembersRaw(v);
   };
 
   const persist = async (t: string, m: Member[]) => {
-    if (!password) return;
-    const { error } = await supabase.rpc("admin_save", {
-      _password: password,
-      _title: t,
-      _members: m as unknown as never,
-    });
-    if (error) toast.error("Save failed: " + error.message);
+    if (!password || !loaded) throw new Error("Wait for saved data to load.");
+    await saveFamily(password, t, m);
   };
 
   useEffect(() => {
     if (!dirty.current) return;
     dirty.current = false;
-    persist(title, members);
+    persist(title, members).catch((error) => toast.error("Save failed: " + error.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [members]);
 
   const saveTitle = (t: string) => {
-    setTitle(t);
-    persist(t, members).then(() => toast.success("Title saved"));
+    persist(t, members).then(() => { setTitle(t); toast.success("Title saved"); }).catch((error) => toast.error("Save failed: " + error.message));
   };
   const login = (pw: string) => {
     sessionStorage.setItem(PW_KEY, pw);

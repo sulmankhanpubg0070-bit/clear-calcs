@@ -4,6 +4,7 @@ import { z } from "npm:zod@3";
 import { createResponsesCall } from "../_shared/responses.ts";
 import { getLovableAiGatewayResponseHeaders } from "../_shared/run-id.ts";
 import { hasAdminAccess, summaryInstructions } from "./policy.ts";
+import { familyStore, verifyPassword } from "../_shared/mongo-store.ts";
 
 const bodySchema = z.object({ password: z.string().min(1).max(1024), accessRestored: z.boolean().optional() }).strict();
 const headers = { ...corsHeaders, "Content-Type": "application/json" };
@@ -21,17 +22,27 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!url || !anonKey || !serviceKey || !apiKey) return json("AI summary connection is not configured.", 401);
     const client = createClient(url, anonKey, { auth: { persistSession: false } });
-    const check = await client.rpc("admin_check", { _password: parsed.data.password });
+    const mongo = await familyStore().catch(() => null);
+    const saved = mongo ? await mongo.findOne({ _id: "family-tree" }) : null;
+    const check = saved
+      ? { data: await verifyPassword(parsed.data.password, saved.passwordHash), error: null }
+      : await client.rpc("admin_check", { _password: parsed.data.password });
     if (!hasAdminAccess(check)) return json("Admin password is incorrect. Please log in again.", 403);
     const service = createClient(url, serviceKey, { auth: { persistSession: false } });
-    const { data: pause, error: pauseError } = await service.from("family_summary_ai_state").select("blocked_status,message").eq("id", 1).maybeSingle();
+    const { data: pause, error: pauseError } = saved
+      ? { data: saved.aiBlock, error: null }
+      : await service.from("family_summary_ai_state").select("blocked_status,message").eq("id", 1).maybeSingle();
     if (pauseError) return json("Unable to check AI availability.", 500);
     if (pause && !parsed.data.accessRestored) return json(pause.message, pause.blocked_status, true);
     if (pause && parsed.data.accessRestored) {
-      const { error } = await service.from("family_summary_ai_state").delete().eq("id", 1);
+      const { error } = mongo && saved
+        ? await mongo.updateOne({ _id: saved._id }, { $set: { aiBlock: null } }).then(() => ({ error: null })).catch(() => ({ error: true }))
+        : await service.from("family_summary_ai_state").delete().eq("id", 1);
       if (error) return json("Unable to resume AI summaries.", 500);
     }
-    const { data: tree, error: treeError } = await client.from("site_data").select("title,members").eq("id", 1).single();
+    const { data: tree, error: treeError } = saved
+      ? { data: { title: saved.title, members: saved.members }, error: null }
+      : await client.from("site_data").select("title,members").eq("id", 1).single();
     if (treeError) return json("Unable to load the saved family tree.", 500);
     if (!Array.isArray(tree.members) || tree.members.length === 0) return json("Add family members before generating a summary.", 400);
     let upstreamFailure: { message: string; status: number; blocked: boolean } | undefined;
@@ -47,7 +58,10 @@ Deno.serve(async (req) => {
           const message = payload.message || payload.error?.message || `AI summary request failed (${response.status}).`;
           const blocked = response.status === 402 || response.status === 403;
           upstreamFailure = { message, status: response.status, blocked };
-          if (blocked) await service.from("family_summary_ai_state").upsert({ id: 1, blocked_status: response.status, message });
+          if (blocked) {
+            if (mongo && saved) await mongo.updateOne({ _id: saved._id }, { $set: { aiBlock: { blocked_status: response.status, message } } });
+            else await service.from("family_summary_ai_state").upsert({ id: 1, blocked_status: response.status, message });
+          }
         }
         return response;
       },

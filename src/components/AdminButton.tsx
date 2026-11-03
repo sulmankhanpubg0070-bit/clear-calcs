@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { hasAdminPassword, loginAdmin, changeAdminPassword } from "@/lib/family-storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,42 +44,29 @@ const AdminButton = (p: AdminButtonProps) => {
   useEffect(() => setTitleDraft(p.title), [p.title]);
   useEffect(() => {
     if (open && !p.password)
-      supabase.rpc("admin_has_password").then(({ data }) => setHasPw(!!data));
+      hasAdminPassword().then(setHasPw).catch((error) => setError(error.message));
   }, [open, p.password]);
 
   const submit = async () => {
     setBusy(true);
     setError(null);
-    if (!hasPw) {
-      const { error: e } = await supabase.rpc("admin_setup", { _password: pw });
-      if (e) setError(e.message);
-      else {
-        p.onLogin(pw);
-        toast.success("Admin password set");
-      }
-    } else {
-      const { data } = await supabase.rpc("admin_check", { _password: pw });
-      if (data) {
-        p.onLogin(pw);
-        toast.success("Admin logged in");
-      } else setError("Wrong password");
-    }
-    setPw("");
-    setBusy(false);
+    try {
+      await loginAdmin(pw, hasPw === false);
+      p.onLogin(pw);
+      toast.success(hasPw === false ? "Admin password set" : "Admin logged in");
+      setPw("");
+    } catch (error) { setError(error instanceof Error ? error.message : "Login failed"); }
+    finally { setBusy(false); }
   };
 
   const changePw = async () => {
     if (!p.password) return;
-    const { error: e } = await supabase.rpc("admin_change_password", {
-      _old: p.password,
-      _new: newPw,
-    });
-    if (e) toast.error(e.message);
-    else {
+    try {
+      await changeAdminPassword(p.password, newPw);
       p.onLogin(newPw);
       setNewPw("");
       toast.success("Password changed");
-    }
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Password change failed"); }
   };
 
   return (
