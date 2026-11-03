@@ -111,36 +111,38 @@ const FamilyTree = () => {
     setPassword(null);
   };
 
-  const upsert = (m: Member) => {
-    setMembers((prev) => {
-      const exists = prev.find((p) => p.id === m.id);
-      let next = exists
-        ? prev.map((p) => (p.id === m.id ? m : p))
-        : [...prev, m];
+  const upsert = (m: Member): Member[] => {
+    const next = members.map((p) => {
+      if (p.id === m.id) return m;
       // Sync spouse symmetry
-      next = next.map((p) => {
-        if (p.id === m.spouseId) return { ...p, spouseId: m.id };
-        if (p.spouseId === m.id && p.id !== m.spouseId) return p;
-        if (p.id !== m.id && p.spouseId === m.id && m.spouseId !== p.id) {
-          return { ...p, spouseId: undefined };
-        }
-        return p;
-      });
-      return next;
+      if (p.id === m.spouseId) return { ...p, spouseId: m.id };
+      if (p.spouseId === m.id && p.id !== m.spouseId) return p;
+      if (p.id !== m.id && p.spouseId === m.id && m.spouseId !== p.id) {
+        return { ...p, spouseId: undefined };
+      }
+      return p;
     });
+    const exists = members.find((p) => p.id === m.id);
+    const result = exists ? next : [...next, m];
+    setMembers(result);
+    return result;
   };
 
-  const remove = (id: string) => {
-    setMembers((prev) =>
-      prev
-        .filter((m) => m.id !== id)
-        .map((m) => ({
-          ...m,
-          parentId: m.parentId === id ? null : m.parentId,
-          spouseId: m.spouseId === id ? null : m.spouseId,
-        })),
-    );
-    toast.success("Member removed");
+  const remove = async (id: string) => {
+    const updatedMembers = members
+      .filter((m) => m.id !== id)
+      .map((m) => ({
+        ...m,
+        parentId: m.parentId === id ? null : m.parentId,
+        spouseId: m.spouseId === id ? null : m.spouseId,
+      }));
+    setMembers(updatedMembers);
+    try {
+      await persist(title, updatedMembers);
+      toast.success("Member removed");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Remove failed");
+    }
   };
 
   const openAdd = () => {
@@ -164,14 +166,21 @@ const FamilyTree = () => {
     URL.revokeObjectURL(url);
   };
 
-  const importJson = (file: File) => {
+  const importJson = async (file: File) => {
     const reader = new FileReader();
-    reader.onload = () => {
+    reader.onload = async () => {
       try {
         const data = JSON.parse(String(reader.result));
         if (Array.isArray(data)) {
           setMembers(data);
-          toast.success("Tree imported");
+          try {
+            await persist(title, data);
+            toast.success("Tree imported");
+          } catch (error) {
+            toast.error(error instanceof Error ? error.message : "Import failed");
+          }
+        } else {
+          toast.error("Invalid file");
         }
       } catch {
         toast.error("Invalid file");
@@ -343,10 +352,9 @@ const FamilyTree = () => {
         onOpenChange={setDialogOpen}
         editing={editing}
         members={members}
-        onSave={(m) => {
-          upsert(m);
-          setDialogOpen(false);
-          toast.success(editing ? "Member updated" : "Member added");
+        onSave={async (m) => {
+          const updatedMembers = upsert(m);
+          await persist(title, updatedMembers);
         }}
       />
     </div>
@@ -693,7 +701,7 @@ interface DialogProps {
   onOpenChange: (v: boolean) => void;
   editing: Member | null;
   members: Member[];
-  onSave: (m: Member) => void;
+  onSave: (m: Member) => Promise<void>;
 }
 
 const NONE = "__none__";
@@ -704,10 +712,11 @@ const MemberDialog = ({ open, onOpenChange, editing, members, onSave }: DialogPr
   const [birthYear, setBirthYear] = useState(editing?.birthYear ?? "");
   const [parentId, setParentId] = useState<string>(editing?.parentId ?? NONE);
   const [spouseId, setSpouseId] = useState<string>(editing?.spouseId ?? NONE);
+  const [busy, setBusy] = useState(false);
 
   const candidates = members.filter((m) => m.id !== editing?.id);
 
-  const submit = () => {
+  const submit = async () => {
     const trimmed = name.trim();
     if (!trimmed) {
       toast.error("Name required");
@@ -721,7 +730,16 @@ const MemberDialog = ({ open, onOpenChange, editing, members, onSave }: DialogPr
       parentId: parentId === NONE ? null : parentId,
       spouseId: spouseId === NONE ? null : spouseId,
     };
-    onSave(member);
+    setBusy(true);
+    try {
+      await onSave(member);
+      onOpenChange(false);
+      toast.success(editing ? "Member updated" : "Member added");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Save failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -800,10 +818,12 @@ const MemberDialog = ({ open, onOpenChange, editing, members, onSave }: DialogPr
           </div>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={submit}>{editing ? "Save" : "Add"}</Button>
+          <Button onClick={submit} disabled={busy}>
+            {busy ? "Saving..." : editing ? "Save" : "Add"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

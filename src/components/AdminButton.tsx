@@ -27,9 +27,9 @@ interface AdminButtonProps {
   saveTitle: (t: string) => void;
   openAdd: () => void;
   openEdit: (m: Member) => void;
-  remove: (id: string) => void;
+  remove: (id: string) => Promise<void>;
   exportJson: () => void;
-  importJson: (file: File) => void;
+  importJson: (file: File) => Promise<void>;
 }
 
 const AdminButton = (p: AdminButtonProps) => {
@@ -172,7 +172,7 @@ const AdminButton = (p: AdminButtonProps) => {
                             <Button size="icon" variant="ghost" aria-label={`Edit ${m.name}`} onClick={() => { setOpen(false); p.openEdit(m); }}>
                               <Pencil className="h-4 w-4" />
                             </Button>
-                            <Button size="icon" variant="ghost" aria-label={`Delete ${m.name}`} className="text-destructive hover:text-destructive" onClick={() => p.remove(m.id)}>
+                            <Button size="icon" variant="ghost" aria-label={`Delete ${m.name}`} className="text-destructive hover:text-destructive" onClick={async () => { setOpen(false); await p.remove(m.id); }}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
