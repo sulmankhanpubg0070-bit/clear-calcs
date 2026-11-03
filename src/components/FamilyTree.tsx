@@ -61,7 +61,6 @@ const FamilyTree = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
-  const dirty = useRef(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -83,7 +82,6 @@ const FamilyTree = () => {
 
   const setMembers: typeof setMembersRaw = (v) => {
     if (!isAdmin || !loaded) return;
-    dirty.current = true;
     setMembersRaw(v);
   };
 
@@ -91,13 +89,6 @@ const FamilyTree = () => {
     if (!password || !loaded) throw new Error("Wait for saved data to load.");
     await saveFamily(password, t, m);
   };
-
-  useEffect(() => {
-    if (!dirty.current) return;
-    dirty.current = false;
-    persist(title, members).catch((error) => toast.error("Save failed: " + error.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [members]);
 
   const saveTitle = (t: string) => {
     persist(t, members).then(() => { setTitle(t); toast.success("Title saved"); }).catch((error) => toast.error("Save failed: " + error.message));
