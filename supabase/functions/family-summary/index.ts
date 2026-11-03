@@ -22,7 +22,12 @@ Deno.serve(async (req) => {
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!url || !anonKey || !serviceKey || !apiKey) return json("AI summary connection is not configured.", 401);
     const client = createClient(url, anonKey, { auth: { persistSession: false } });
-    const mongo = await familyStore().catch(() => null);
+    const mongo = await familyStore().catch((error) => {
+      // Only the explicit pre-migration isolation block permits the original provider.
+      // Connection outages must not revive an old password or stale AI state.
+      if (error instanceof Error && error.message.startsWith("MongoDB user must")) return null;
+      throw error;
+    });
     const saved = mongo ? await mongo.findOne({ _id: "family-tree" }) : null;
     const check = saved
       ? { data: await verifyPassword(parsed.data.password, saved.passwordHash), error: null }

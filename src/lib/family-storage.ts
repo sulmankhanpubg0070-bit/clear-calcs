@@ -22,6 +22,7 @@ export async function loadFamily() {
     revision = data.revision;
     return { ...data, migrationError: null };
   } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith("MongoDB user must")) throw error;
     // Retain the working original site until isolation and migration have actually succeeded.
     const { data, error: sourceError } = await supabase.from("site_data").select("title,members").eq("id", 1).single();
     if (sourceError) throw new Error("Unable to load saved family data.");
