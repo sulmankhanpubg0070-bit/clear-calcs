@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Fix new-member persistence and prevent success messages before MongoDB confirms a save; verify reload readback
+
 - [x] Add and deploy secure MongoDB data function, storage adapter, serialized saves and matching summary password/data access; isolation tests pass and original tree remains visible
 - [x] Connect using the owner-approved existing credential to Familyloveable and copy original saved data/password without overwriting existing records; live MongoDB readback and wrong-password rejection verified
 - [ ] Verify a new admin edit saves and reads back through the UI — requires the owner's existing admin password session; migration write succeeded, but no admin credentials are available for this check
