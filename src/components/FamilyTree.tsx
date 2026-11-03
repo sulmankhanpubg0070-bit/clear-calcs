@@ -102,8 +102,8 @@ const FamilyTree = () => {
     setPassword(null);
   };
 
-  const upsert = (m: Member): Member[] => {
-    const next = members.map((p) => {
+  const upsert = (currentMembers: Member[], m: Member): Member[] => {
+    const next = currentMembers.map((p) => {
       if (p.id === m.id) return m;
       // Sync spouse symmetry
       if (p.id === m.spouseId) return { ...p, spouseId: m.id };
@@ -113,9 +113,8 @@ const FamilyTree = () => {
       }
       return p;
     });
-    const exists = members.find((p) => p.id === m.id);
+    const exists = currentMembers.find((p) => p.id === m.id);
     const result = exists ? next : [...next, m];
-    setMembers(result);
     return result;
   };
 
@@ -343,8 +342,10 @@ const FamilyTree = () => {
         onOpenChange={setDialogOpen}
         editing={editing}
         members={members}
+        setMembers={setMembersRaw}
         onSave={async (m) => {
-          const updatedMembers = upsert(m);
+          const updatedMembers = upsert(members, m);
+          setMembersRaw(updatedMembers);
           await persist(title, updatedMembers);
         }}
       />
@@ -692,6 +693,7 @@ interface DialogProps {
   onOpenChange: (v: boolean) => void;
   editing: Member | null;
   members: Member[];
+  setMembers: (v: Member[]) => void;
   onSave: (m: Member) => Promise<void>;
 }
 
