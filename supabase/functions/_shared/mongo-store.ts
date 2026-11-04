@@ -57,10 +57,8 @@ export async function familyStore() {
       await session.withTransaction(async () => {
         const current = await state.findOne({ _id: "family-tree" }, { session });
         if (!current) throw new Error("Unable to load saved website data.");
-        const [memberRecord, adminRecord] = await Promise.all([
-          members.findOne({ _id: "family-tree" }, { session }),
-          admin.findOne({ _id: "family-tree" }, { session }),
-        ]);
+        const memberRecord = await members.findOne({ _id: "family-tree" }, { session });
+        const adminRecord = await admin.findOne({ _id: "family-tree" }, { session });
         const seed = separationSeed(current, memberRecord, adminRecord);
         await members.updateOne({ _id: "family-tree" }, { $setOnInsert: { members: seed.members.members } }, { upsert: true, session });
         await admin.updateOne({ _id: "family-tree" }, { $setOnInsert: { passwordHash: seed.admin.passwordHash } }, { upsert: true, session });
