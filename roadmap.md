@@ -1,5 +1,7 @@
 # Roadmap
 
+- [ ] Separate MongoDB admin credentials and member data safely; align login, atomic saves and summaries, and verify preserved data
+
 - [ ] Fix new-member persistence and prevent success messages before MongoDB confirms a save; verify reload readback
 
 - [x] Add and deploy secure MongoDB data function, storage adapter, serialized saves and matching summary password/data access; isolation tests pass and original tree remains visible
