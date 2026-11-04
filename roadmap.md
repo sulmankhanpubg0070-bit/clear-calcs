@@ -1,5 +1,7 @@
 # Roadmap
 
+- [x] Remove the public All members button and center the website icon, heading and Admin button vertically; verified at mobile and desktop sizes, password dialog opens
+
 - [x] Separate MongoDB admin credentials and member data safely; align login, atomic saves and summaries; tests pass, ten saved members survive reload, and wrong-password rejection verified
 
 - [x] Require MongoDB save confirmation and atomically save member data with title/revision; failure and serialized revision tests pass
