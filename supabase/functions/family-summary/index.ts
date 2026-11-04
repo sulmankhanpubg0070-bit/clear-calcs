@@ -1,10 +1,9 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { z } from "npm:zod@3";
 import { createResponsesCall } from "../_shared/responses.ts";
 import { getLovableAiGatewayResponseHeaders } from "../_shared/run-id.ts";
 import { hasAdminAccess, summaryInstructions } from "./policy.ts";
-import { familyStore, verifyPassword } from "../_shared/mongo-store.ts";
+import { familyStore, readFamily, verifyPassword } from "../_shared/mongo-store.ts";
 
 const bodySchema = z.object({ password: z.string().min(1).max(1024), accessRestored: z.boolean().optional() }).strict();
 const headers = { ...corsHeaders, "Content-Type": "application/json" };
@@ -16,35 +15,21 @@ Deno.serve(async (req) => {
   try {
     const parsed = bodySchema.safeParse(await req.json());
     if (!parsed.success) return json("A valid admin password is required.", 400);
-    const url = Deno.env.get("SUPABASE_URL");
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
-    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
-    if (!url || !anonKey || !serviceKey || !apiKey) return json("AI summary connection is not configured.", 401);
-    const client = createClient(url, anonKey, { auth: { persistSession: false } });
+    if (!apiKey) return json("AI summary connection is not configured.", 401);
     const mongo = await familyStore();
-    const saved = await mongo.findOne({ _id: "family-tree" });
-    if (!saved) return json("Unable to load the saved family tree.", 503);
-    const check = saved
-      ? { data: await verifyPassword(parsed.data.password, saved.passwordHash), error: null }
-      : await client.rpc("admin_check", { _password: parsed.data.password });
+    const admin = await mongo.admin.findOne({ _id: "family-tree" });
+    if (!admin?.passwordHash) return json("Existing admin password is unavailable.", 503);
+    const check = { data: await verifyPassword(parsed.data.password, admin.passwordHash), error: null };
     if (!hasAdminAccess(check)) return json("Admin password is incorrect. Please log in again.", 403);
-    const service = createClient(url, serviceKey, { auth: { persistSession: false } });
-    const { data: pause, error: pauseError } = saved
-      ? { data: saved.aiBlock, error: null }
-      : await service.from("family_summary_ai_state").select("blocked_status,message").eq("id", 1).maybeSingle();
-    if (pauseError) return json("Unable to check AI availability.", 500);
+    const saved = await readFamily(mongo);
+    if (!saved) return json("Unable to load the saved family tree.", 503);
+    const pause = saved.aiBlock;
     if (pause && !parsed.data.accessRestored) return json(pause.message, pause.blocked_status, true);
     if (pause && parsed.data.accessRestored) {
-      const { error } = mongo && saved
-        ? await mongo.updateOne({ _id: saved._id }, { $set: { aiBlock: null } }).then(() => ({ error: null })).catch(() => ({ error: true }))
-        : await service.from("family_summary_ai_state").delete().eq("id", 1);
-      if (error) return json("Unable to resume AI summaries.", 500);
+      await mongo.state.updateOne({ _id: "family-tree" }, { $set: { aiBlock: null } });
     }
-    const { data: tree, error: treeError } = saved
-      ? { data: { title: saved.title, members: saved.members }, error: null }
-      : await client.from("site_data").select("title,members").eq("id", 1).single();
-    if (treeError) return json("Unable to load the saved family tree.", 500);
+    const tree = { title: saved.title, members: saved.members };
     if (!Array.isArray(tree.members) || tree.members.length === 0) return json("Add family members before generating a summary.", 400);
     let upstreamFailure: { message: string; status: number; blocked: boolean } | undefined;
     // Capture safe gateway failures before the SDK turns them into a stream error.
@@ -60,8 +45,7 @@ Deno.serve(async (req) => {
           const blocked = response.status === 402 || response.status === 403;
           upstreamFailure = { message, status: response.status, blocked };
           if (blocked) {
-            if (mongo && saved) await mongo.updateOne({ _id: saved._id }, { $set: { aiBlock: { blocked_status: response.status, message } } });
-            else await service.from("family_summary_ai_state").upsert({ id: 1, blocked_status: response.status, message });
+            await mongo.state.updateOne({ _id: "family-tree" }, { $set: { aiBlock: { blocked_status: response.status, message } } });
           }
         }
         return response;

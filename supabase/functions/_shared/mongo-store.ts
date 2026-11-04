@@ -1,16 +1,7 @@
 import { MongoClient } from "npm:mongodb@6.17.0";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import bcrypt from "npm:bcryptjs@2.4.3";
-import { FAMILY_DATABASE } from "./mongo-policy.ts";
-
-export interface FamilyRecord {
-  _id: string;
-  title: string;
-  members: unknown[];
-  passwordHash: string;
-  revision: number;
-  aiBlock?: { blocked_status: number; message: string } | null;
-}
+import { FAMILY_DATABASE, COLLECTION_WEBSITE_STATE, COLLECTION_MEMBER_DATA, COLLECTION_ADMIN_CREDENTIALS, separationSeed, type WebsiteState, type MemberData, type AdminCredentials } from "./mongo-policy.ts";
 
 let connection: Promise<MongoClient> | undefined;
 async function connect() {
@@ -21,14 +12,12 @@ async function connect() {
       const client = new MongoClient(uri, { serverSelectionTimeoutMS: 10000, connectTimeoutMS: 10000, maxPoolSize: 3 });
       try {
         await client.connect();
-        // The owner permits the existing full-access credential; every operation
-        // still targets the fixed application database, never a browser-supplied name.
         await client.db(FAMILY_DATABASE).command({ ping: 1 });
         return client;
-      } catch (error) {
+      } catch {
         await client.close();
         connection = undefined;
-        throw new Error("MongoDB connection failed. Check the database password and Atlas network access. Existing data has not been changed.");
+        throw new Error("MongoDB connection failed. Existing data has not been changed.");
       }
     })();
   }
@@ -37,8 +26,11 @@ async function connect() {
 
 export async function familyStore() {
   const client = await connect();
-  const collection = client.db(FAMILY_DATABASE).collection<FamilyRecord>("website_state");
-  const existing = await collection.findOne({ _id: "family-tree" });
+  const db = client.db(FAMILY_DATABASE);
+  const state = db.collection<WebsiteState & { storageVersion?: number }>(COLLECTION_WEBSITE_STATE);
+  const members = db.collection<MemberData>(COLLECTION_MEMBER_DATA);
+  const admin = db.collection<AdminCredentials>(COLLECTION_ADMIN_CREDENTIALS);
+  let existing = await state.findOne({ _id: "family-tree" });
   if (!existing) {
     const url = Deno.env.get("SUPABASE_URL");
     const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -52,20 +44,46 @@ export async function familyStore() {
     if (tree.error || secret.error || block.error || !Array.isArray(tree.data.members)) {
       throw new Error("Unable to copy the original website safely. Original data has not been changed.");
     }
-    // One atomic document: never expose a partially migrated tree or overwrite an existing destination.
-    await collection.updateOne({ _id: "family-tree" }, { $setOnInsert: {
+    await state.updateOne({ _id: "family-tree" }, { $setOnInsert: {
       title: tree.data.title, members: tree.data.members, passwordHash: secret.data.password_hash,
       revision: 0, aiBlock: block.data ?? null,
     } }, { upsert: true });
+    existing = await state.findOne({ _id: "family-tree" });
   }
-  return collection;
+  if (!existing) throw new Error("Unable to load saved website data.");
+  if (existing.storageVersion !== 2) {
+    const session = client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const current = await state.findOne({ _id: "family-tree" }, { session });
+        if (!current) throw new Error("Unable to load saved website data.");
+        const memberRecord = await members.findOne({ _id: "family-tree" }, { session });
+        const adminRecord = await admin.findOne({ _id: "family-tree" }, { session });
+        const seed = separationSeed(current, memberRecord, adminRecord);
+        await members.updateOne({ _id: "family-tree" }, { $setOnInsert: { members: seed.members.members } }, { upsert: true, session });
+        await admin.updateOne({ _id: "family-tree" }, { $setOnInsert: { passwordHash: seed.admin.passwordHash } }, { upsert: true, session });
+        await state.updateOne({ _id: "family-tree" }, { $set: { storageVersion: 2 }, $unset: { members: "", passwordHash: "" } }, { session });
+      });
+    } finally { await session.endSession(); }
+  }
+  return { client, state, members, admin };
+}
+
+export async function readFamily(store: Awaited<ReturnType<typeof familyStore>>) {
+  const session = store.client.startSession();
+  try {
+    return await session.withTransaction(async () => {
+      const state = await store.state.findOne({ _id: "family-tree" }, { session });
+      const members = await store.members.findOne({ _id: "family-tree" }, { session });
+      if (!state || !members) throw new Error("Unable to load saved family data.");
+      return { title: state.title, revision: state.revision, members: members.members, aiBlock: state.aiBlock };
+    }, { readConcern: { level: "snapshot" } });
+  } finally { await session.endSession(); }
 }
 
 export async function verifyPassword(password: string, hash: string) {
-  // PostgreSQL crypt uses the compatible $2a$ bcrypt format.
   return bcrypt.compare(password, hash);
 }
-
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
 }
