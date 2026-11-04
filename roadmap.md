@@ -1,6 +1,6 @@
 # Roadmap
 
-- [ ] Remove the public All members button and center the website icon, heading and Admin button vertically; verify mobile and desktop layout
+- [x] Remove the public All members button and center the website icon, heading and Admin button vertically; verified at mobile and desktop sizes, password dialog opens
 
 - [x] Separate MongoDB admin credentials and member data safely; align login, atomic saves and summaries; tests pass, ten saved members survive reload, and wrong-password rejection verified
 
