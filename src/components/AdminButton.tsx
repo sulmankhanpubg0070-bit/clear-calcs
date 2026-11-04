@@ -85,7 +85,7 @@ const AdminButton = (p: AdminButtonProps) => {
             size="icon"
             aria-label="Admin"
             className={cn(
-              "h-11 w-11 shrink-0 rounded-full p-0 border-primary/40 bg-card/80 text-primary backdrop-blur",
+              "fixed right-3 top-3 z-50 sm:right-4 sm:top-4 h-11 w-11 shrink-0 rounded-full p-0 border-primary/40 bg-card/80 text-primary backdrop-blur",
               "shadow-[0_0_16px_hsl(var(--primary)/0.3)] transition-transform active:scale-90",
               p.password && "bg-primary text-primary-foreground",
             )}
