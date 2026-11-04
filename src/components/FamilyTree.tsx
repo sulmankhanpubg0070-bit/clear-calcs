@@ -11,13 +11,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -60,7 +53,6 @@ const FamilyTree = () => {
   const isAdmin = !!password;
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
-  const [membersOpen, setMembersOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -187,8 +179,19 @@ const FamilyTree = () => {
       {/* Ambient glow */}
       <div className="pointer-events-none absolute -top-20 -right-20 h-64 w-64 rounded-full bg-primary/30 blur-[120px]" />
 
-      {/* Admin button pinned to the top-right corner */}
-      <div className="absolute right-3 top-3 z-20 sm:right-4 sm:top-4">
+      <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-accent/30 blur-[120px]" />
+
+      {/* Centered website identity and admin control */}
+      <header className="relative z-10 flex w-full flex-col items-center gap-3 text-center">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary/20 text-primary">
+          <TreePine className="h-6 w-6" aria-hidden="true" />
+        </div>
+        <div className="w-full min-w-0">
+          <h1 className="break-words text-2xl font-bold text-foreground [overflow-wrap:anywhere]">
+            {title}
+          </h1>
+          <p className="text-xs text-muted-foreground">{members.length} members</p>
+        </div>
         <AdminButton
           password={password}
           onLogin={login}
@@ -202,123 +205,11 @@ const FamilyTree = () => {
           exportJson={exportJson}
           importJson={importJson}
         />
-      </div>
-
-      <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-accent/30 blur-[120px]" />
-
-      {/* Header */}
-      <header className="relative z-10 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 place-items-center rounded-2xl bg-primary/20 text-primary shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
-            <TreePine className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {title}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {members.length} members
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-1 flex-wrap items-center justify-end gap-2 pr-14 sm:pr-16">
-          <Sheet open={membersOpen} onOpenChange={setMembersOpen}>
-            <SheetTrigger asChild>
-              <Button
-                variant="secondary"
-                size="icon"
-                aria-label={`Open all members list (${members.length} members)`}
-                aria-haspopup="dialog"
-                aria-expanded={membersOpen}
-                aria-controls="members-sheet"
-                className={cn(
-                  "relative h-11 w-11 shrink-0 rounded-full p-0",
-                  "shadow-[0_0_16px_hsl(var(--primary)/0.3)]",
-                  "focus-visible:outline-none focus-visible:ring-2",
-                  "focus-visible:ring-ring focus-visible:ring-offset-2",
-                  "focus-visible:ring-offset-background",
-                  "transition-transform active:scale-90",
-                )}
-              >
-                <Users className="h-5 w-5" aria-hidden="true" />
-                <span
-                  aria-hidden="true"
-                  className="absolute -right-1 -top-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-accent-foreground shadow"
-                >
-                  {members.length}
-                </span>
-              </Button>
-            </SheetTrigger>
-            <SheetContent
-              id="members-sheet"
-              className="w-full sm:max-w-md overflow-y-auto bg-card border-border/60"
-            >
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <Users className="h-4 w-4" /> All members ({members.length})
-                </SheetTitle>
-              </SheetHeader>
-              <ul className="mt-4 grid gap-2">
-                {members.map((m) => {
-                  const parent = members.find((p) => p.id === m.parentId);
-                  const spouse = members.find((p) => p.id === m.spouseId);
-                  return (
-                    <li
-                      key={m.id}
-                      className="flex items-center justify-between gap-3 rounded-2xl bg-muted/40 px-4 py-3"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <GenderDot gender={m.gender} />
-                          <span className="font-medium text-foreground truncate">
-                            {m.name}
-                          </span>
-                          {m.birthYear && (
-                            <span className="text-xs text-muted-foreground">
-                              ({m.birthYear})
-                            </span>
-                          )}
-                        </div>
-                        <div className="mt-0.5 text-xs text-muted-foreground truncate">
-                          {parent ? `Child of ${parent.name}` : "Root"}
-                          {spouse ? ` • Spouse: ${spouse.name}` : ""}
-                        </div>
-                      </div>
-                      <div className={cn("flex shrink-0 gap-1", !isAdmin && "hidden")}>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => {
-                            setMembersOpen(false);
-                            openEdit(m);
-                          }}
-                          aria-label={`Edit ${m.name}`}
-                        >
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => remove(m.id)}
-                          aria-label={`Delete ${m.name}`}
-                          className="text-destructive hover:text-destructive"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </SheetContent>
-          </Sheet>
           {isAdmin && (
             <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
               <Plus className="mr-1 h-4 w-4" /> Add member
             </Button>
           )}
-        </div>
       </header>
 
       <FamilyInfo title={title} members={members} />
