@@ -1,8 +1,6 @@
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { z } from "npm:zod@3";
-import { MongoClient } from "npm:mongodb@6.17.0";
-import bcrypt from "npm:bcryptjs@2.4.3";
-import { FAMILY_DATABASE } from "../_shared/mongo-policy.ts";
+import { familyStore, readFamily, verifyPassword, hashPassword } from "../_shared/mongo-store.ts";
 
 // Schema definitions
 const password = z.string().min(1).max(72);
@@ -27,211 +25,46 @@ const json = (data: unknown, status = 200) => new Response(JSON.stringify(data),
   headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "no-store" } 
 });
 
-// MongoDB connection with caching
-let cachedClient: MongoClient | null = null;
-let clientPromise: Promise<MongoClient> | null = null;
-
-async function getClient(): Promise<MongoClient> {
-  if (cachedClient) {
-    return cachedClient;
-  }
-  
-  if (!clientPromise) {
-    const uri = Deno.env.get("MONGODB_URI");
-    if (!uri) {
-      throw new Error("MongoDB connection is not configured. Set MONGODB_URI secret.");
-    }
-    
-    clientPromise = (async () => {
-      const client = new MongoClient(uri, { 
-        serverSelectionTimeoutMS: 10000, 
-        connectTimeoutMS: 10000, 
-        maxPoolSize: 3 
-      });
-      
-      try {
-        await client.connect();
-        await client.db(FAMILY_DATABASE).command({ ping: 1 });
-        cachedClient = client;
-        return client;
-      } catch (error) {
-        await client.close();
-        throw new Error(`MongoDB connection failed: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    })();
-  }
-  
-  return clientPromise;
-}
-
-// Get database collections
-async function getDb() {
-  const client = await getClient();
-  return client.db(FAMILY_DATABASE);
-}
-
-// Password helpers
-async function verifyPassword(password: string, hash: string): Promise<boolean> {
-  return bcrypt.compare(password, hash);
-}
-
-async function hashPassword(password: string): Promise<string> {
-  return bcrypt.hash(password, 10);
-}
-
+class Conflict extends Error {}
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
-  }
-  
-  if (req.method !== "POST") {
-    return json({ message: "Only POST requests are allowed." }, 405);
-  }
-  
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ message: "Only POST requests are allowed." }, 405);
   try {
-    const body = await req.json().catch(() => null);
-    const input = schema.safeParse(body);
-    
-    if (!input.success) {
-      return json({ message: "Invalid request. Check the entered data.", error: input.error.format() }, 400);
+    const input = schema.safeParse(await req.json().catch(() => null));
+    if (!input.success) return json({ message: "Invalid request. Check the entered data." }, 400);
+    const store = await familyStore();
+    if (input.data.action === "load") {
+      const saved = await readFamily(store);
+      const admin = await store.admin.findOne({ _id: "family-tree" });
+      if (!saved || !admin) return json({ message: "Existing website data is unavailable." }, 503);
+      return json({ title: saved.title, members: saved.members, revision: saved.revision, hasPassword: !!admin.passwordHash });
     }
-    
-    const db = await getDb();
-    const websiteState = db.collection("website_state");
-    const memberData = db.collection("member_data");
-    const adminCredentials = db.collection("admin_credentials");
-    
-    const action = input.data.action;
-    
-    // LOAD: Get website state, members, and check if password exists
-    if (action === "load") {
-      const [state, members, admin] = await Promise.all([
-        websiteState.findOne({ _id: "family-tree" }),
-        memberData.findOne({ _id: "family-tree" }),
-        adminCredentials.findOne({ _id: "family-tree" })
-      ]);
-      
-      // Create default records if they don't exist
-      if (!state) {
-        await websiteState.insertOne({
-          _id: "family-tree",
-          title: "Family Tree",
-          revision: 0
-        });
-      }
-      
-      if (!members) {
-        await memberData.insertOne({
-          _id: "family-tree",
-          members: []
-        });
-      }
-      
-      const resultState = state || { title: "Family Tree", revision: 0 };
-      const resultMembers = members || { members: [] };
-      
-      return json({
-        title: resultState.title,
-        members: resultMembers.members,
-        revision: resultState.revision,
-        hasPassword: !!admin?.passwordHash
-      });
-    }
-    
-    // CHECK: Verify admin password
-    if (action === "check") {
-      const admin = await adminCredentials.findOne({ _id: "family-tree" });
-      
-      if (!admin || !admin.passwordHash) {
-        // First time: create admin with this password
-        const hash = await hashPassword(input.data.password);
-        await adminCredentials.updateOne(
-          { _id: "family-tree" },
-          { $set: { passwordHash: hash } },
-          { upsert: true }
-        );
-        return json({ valid: true, message: "Admin created" });
-      }
-      
-      const isValid = await verifyPassword(input.data.password, admin.passwordHash);
-      if (!isValid) {
-        return json({ message: "Wrong password" }, 403);
-      }
-      return json({ valid: true });
-    }
-    
-    // CHANGE-PASSWORD: Update admin password
-    if (action === "change-password") {
-      const admin = await adminCredentials.findOne({ _id: "family-tree" });
-      
-      if (!admin) {
-        return json({ message: "Admin not found" }, 404);
-      }
-      
-      const isValid = await verifyPassword(input.data.password, admin.passwordHash);
-      if (!isValid) {
-        return json({ message: "Wrong password" }, 403);
-      }
-      
+    const admin = await store.admin.findOne({ _id: "family-tree" });
+    if (!admin?.passwordHash) return json({ message: "Existing admin password is unavailable." }, 503);
+    if (!await verifyPassword(input.data.password, admin.passwordHash)) return json({ message: "Wrong password" }, 403);
+    if (input.data.action === "check") return json({ valid: true });
+    if (input.data.action === "change-password") {
       const hash = await hashPassword(input.data.newPassword);
-      const result = await adminCredentials.updateOne(
-        { _id: "family-tree", passwordHash: admin.passwordHash },
-        { $set: { passwordHash: hash } }
-      );
-      
-      if (!result.matchedCount) {
-        return json({ message: "Password changed elsewhere. Try again." }, 409);
-      }
-      
-      return json({ saved: true, message: "Password changed" });
+      const result = await store.admin.updateOne({ _id: "family-tree", passwordHash: admin.passwordHash }, { $set: { passwordHash: hash } });
+      if (!result.matchedCount) return json({ message: "Password changed elsewhere. Try again." }, 409);
+      return json({ saved: true });
     }
-    
-    // SAVE: Save website state and members to separate collections
-    if (action === "save") {
-      const { password, title, members, revision } = input.data;
-      
-      // Verify password
-      const admin = await adminCredentials.findOne({ _id: "family-tree" });
-      if (!admin) {
-        return json({ message: "Admin not found" }, 404);
-      }
-      
-      const isValid = await verifyPassword(password, admin.passwordHash);
-      if (!isValid) {
-        return json({ message: "Wrong password" }, 403);
-      }
-      
-      // Validate member IDs are unique
-      const ids = new Set(members.map((m: { id: string }) => m.id));
-      if (ids.size !== members.length) {
-        return json({ message: "Member IDs must be unique." }, 400);
-      }
-      
-      // Save to website_state collection
-      const stateResult = await websiteState.updateOne(
-        { _id: "family-tree", revision },
-        { $set: { title }, $inc: { revision: 1 } }
-      );
-      
-      if (!stateResult.matchedCount) {
-        return json({ message: "The tree changed elsewhere. Reload before saving." }, 409);
-      }
-      
-      // Save to member_data collection
-      await memberData.updateOne(
-        { _id: "family-tree" },
-        { $set: { members } },
-        { upsert: true }
-      );
-      
-      return json({ saved: true, revision: revision + 1, message: "Data saved to MongoDB" });
-    }
-    
-    return json({ message: "Invalid action" }, 400);
-    
+    const { title, members, revision } = input.data;
+    if (new Set(members.map(m => m.id)).size !== members.length) return json({ message: "Member IDs must be unique." }, 400);
+    const session = store.client.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const credential = await store.admin.findOne({ _id: "family-tree", passwordHash: admin.passwordHash }, { session });
+        if (!credential) throw new Conflict("Password changed elsewhere. Log in again.");
+        const result = await store.state.updateOne({ _id: "family-tree", revision }, { $set: { title }, $inc: { revision: 1 } }, { session });
+        if (!result.matchedCount) throw new Conflict("The tree changed elsewhere. Reload before saving.");
+        const memberResult = await store.members.updateOne({ _id: "family-tree" }, { $set: { members } }, { session });
+        if (!memberResult.matchedCount) throw new Error("Saved member data is unavailable.");
+      });
+    } finally { await session.endSession(); }
+    return json({ saved: true, revision: revision + 1 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to access website data. No changes were saved.";
-    console.error("Edge Function Error:", error);
-    return json({ message, error: error instanceof Error ? error.stack : undefined }, 503);
+    if (error instanceof Conflict) return json({ message: error.message }, 409);
+    return json({ message: "Unable to access website data. No changes were saved." }, 503);
   }
 });
