@@ -181,39 +181,35 @@ const FamilyTree = () => {
 
       <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-accent/30 blur-[120px]" />
 
-      {/* Website header with logo on left, title in center, admin on right */}
-      <header className="relative z-10 flex w-full items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary/20 text-primary">
-            <TreePine className="h-6 w-6" aria-hidden="true" />
-          </div>
-          <div className="min-w-0">
-            <h1 className="break-words text-2xl font-bold text-foreground [overflow-wrap:anywhere]">
-              {title}
-            </h1>
-            <p className="text-xs text-muted-foreground">{members.length} members</p>
-          </div>
+      {/* Centered website identity and admin control */}
+      <header className="relative z-10 flex w-full flex-col items-center gap-3 text-center">
+        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary/20 text-primary">
+          <TreePine className="h-6 w-6" aria-hidden="true" />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="w-full min-w-0">
+          <h1 className="break-words text-2xl font-bold text-foreground [overflow-wrap:anywhere]">
+            {title}
+          </h1>
+          <p className="text-xs text-muted-foreground">{members.length} members</p>
+        </div>
+        <AdminButton
+          password={password}
+          onLogin={login}
+          onLogout={logout}
+          title={title}
+          saveTitle={saveTitle}
+          members={members}
+          openAdd={openAdd}
+          openEdit={openEdit}
+          remove={remove}
+          exportJson={exportJson}
+          importJson={importJson}
+        />
           {isAdmin && (
             <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
               <Plus className="mr-1 h-4 w-4" /> Add member
             </Button>
           )}
-          <AdminButton
-            password={password}
-            onLogin={login}
-            onLogout={logout}
-            title={title}
-            saveTitle={saveTitle}
-            members={members}
-            openAdd={openAdd}
-            openEdit={openEdit}
-            remove={remove}
-            exportJson={exportJson}
-            importJson={importJson}
-          />
-        </div>
       </header>
 
       <FamilyInfo title={title} members={members} />
