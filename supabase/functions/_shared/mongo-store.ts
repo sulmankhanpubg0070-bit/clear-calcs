@@ -1,9 +1,20 @@
-import { MongoClient } from "npm:mongodb@6.17.0";
+import { MongoClient, type ClientSession } from "npm:mongodb@6.17.0";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import bcrypt from "npm:bcryptjs@2.4.3";
 import { FAMILY_DATABASE, COLLECTION_WEBSITE_STATE, COLLECTION_MEMBER_DATA, COLLECTION_ADMIN_CREDENTIALS, separationSeed, type WebsiteState, type MemberData, type AdminCredentials } from "./mongo-policy.ts";
 
+const SESSION_MS = 12 * 60 * 60 * 1000; // admin login lasts 12 hours
+const MAX_FAILURES = 5; // wrong passwords allowed...
+const FAILURE_WINDOW_MS = 15 * 60 * 1000; // ...within this window
+const LOCK_MS = 10 * 60 * 1000; // then locked out for this long
+export const MAX_BACKUPS = 30;
+
+interface SessionDoc { _id: string; createdAt: Date; expiresAt: Date }
+interface AttemptDoc { _id: string; failures: number; lockedUntil: Date | null; updatedAt: Date }
+export interface BackupDoc { createdAt: Date; revision: number; title: string; count: number; reason: string; members: MemberData["members"] }
+
 let connection: Promise<MongoClient> | undefined;
+let indexesReady = false;
 async function connect() {
   const uri = Deno.env.get("MONGODB_URI");
   if (!uri) throw new Error("MongoDB connection is not configured.");
@@ -66,10 +77,22 @@ export async function familyStore() {
       });
     } finally { await session.endSession(); }
   }
-  return { client, state, members, admin };
+  const sessions = db.collection<SessionDoc>("admin_sessions");
+  const attempts = db.collection<AttemptDoc>("admin_login_attempts");
+  const backups = db.collection<BackupDoc>("family_backups");
+  if (!indexesReady) {
+    try {
+      await sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // expired logins delete themselves
+      await backups.createIndex({ createdAt: -1 });
+      indexesReady = true;
+    } catch { /* indexes are an optimisation; never block the site on them */ }
+  }
+  return { client, state, members, admin, sessions, attempts, backups };
 }
 
-export async function readFamily(store: Awaited<ReturnType<typeof familyStore>>) {
+export type FamilyStore = Awaited<ReturnType<typeof familyStore>>;
+
+export async function readFamily(store: FamilyStore) {
   const session = store.client.startSession();
   try {
     return await session.withTransaction(async () => {
@@ -86,4 +109,71 @@ export async function verifyPassword(password: string, hash: string) {
 }
 export async function hashPassword(password: string) {
   return bcrypt.hash(password, 10);
+}
+
+// ---------- hashing helper ----------
+const toHex = (bytes: Uint8Array) => Array.from(bytes).map((b) => b.toString(16).padStart(2, "0")).join("");
+export async function hashKey(text: string) {
+  return toHex(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))));
+}
+
+// ---------- admin sessions (the browser keeps this token, never the password) ----------
+export async function createSession(store: FamilyStore) {
+  const token = toHex(crypto.getRandomValues(new Uint8Array(32)));
+  const now = Date.now();
+  // Only a hash of the token is stored, so a database leak cannot be used to log in.
+  await store.sessions.insertOne({ _id: await hashKey(token), createdAt: new Date(now), expiresAt: new Date(now + SESSION_MS) });
+  return token;
+}
+export async function verifySession(store: FamilyStore, token: string) {
+  if (!token) return false;
+  const found = await store.sessions.findOne({ _id: await hashKey(token), expiresAt: { $gt: new Date() } });
+  return !!found;
+}
+export async function endSession(store: FamilyStore, token: string) {
+  await store.sessions.deleteOne({ _id: await hashKey(token) });
+}
+export async function endAllSessions(store: FamilyStore) {
+  await store.sessions.deleteMany({});
+}
+
+// ---------- wrong-password limiter (per visitor address) ----------
+/** Seconds the visitor must still wait, or 0 when they may try. */
+export async function lockRemaining(store: FamilyStore, key: string) {
+  const record = await store.attempts.findOne({ _id: key });
+  if (record?.lockedUntil && record.lockedUntil.getTime() > Date.now()) {
+    return Math.ceil((record.lockedUntil.getTime() - Date.now()) / 1000);
+  }
+  return 0;
+}
+export async function recordFailure(store: FamilyStore, key: string) {
+  const now = new Date();
+  const record = await store.attempts.findOne({ _id: key });
+  const recent = record && now.getTime() - record.updatedAt.getTime() < FAILURE_WINDOW_MS;
+  const failures = (recent ? record.failures : 0) + 1;
+  const locked = failures >= MAX_FAILURES;
+  await store.attempts.updateOne(
+    { _id: key },
+    { $set: { failures: locked ? 0 : failures, lockedUntil: locked ? new Date(now.getTime() + LOCK_MS) : null, updatedAt: now } },
+    { upsert: true },
+  );
+}
+export async function clearFailures(store: FamilyStore, key: string) {
+  await store.attempts.deleteOne({ _id: key });
+}
+
+// ---------- backups ----------
+export async function insertBackup(
+  store: FamilyStore,
+  entry: { revision: number; title: string; members: BackupDoc["members"]; reason: string },
+  session?: ClientSession,
+) {
+  await store.backups.insertOne(
+    { createdAt: new Date(), revision: entry.revision, title: entry.title, count: entry.members.length, reason: entry.reason, members: entry.members },
+    { session },
+  );
+}
+export async function pruneBackups(store: FamilyStore) {
+  const old = await store.backups.find({}, { projection: { _id: 1 } }).sort({ createdAt: -1 }).skip(MAX_BACKUPS).toArray();
+  if (old.length) await store.backups.deleteMany({ _id: { $in: old.map((b) => b._id) } });
 }

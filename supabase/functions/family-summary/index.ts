@@ -3,9 +3,10 @@ import { z } from "npm:zod@3";
 import { createResponsesCall } from "../_shared/responses.ts";
 import { getLovableAiGatewayResponseHeaders } from "../_shared/run-id.ts";
 import { hasAdminAccess, summaryInstructions } from "./policy.ts";
-import { familyStore, readFamily, verifyPassword } from "../_shared/mongo-store.ts";
+import { familyStore, readFamily, verifySession } from "../_shared/mongo-store.ts";
 
-const bodySchema = z.object({ password: z.string().min(1).max(1024), accessRestored: z.boolean().optional() }).strict();
+// The browser sends its admin session token (never the password).
+const bodySchema = z.object({ token: z.string().min(16).max(128), accessRestored: z.boolean().optional() }).strict();
 const headers = { ...corsHeaders, "Content-Type": "application/json" };
 const json = (message: string, status: number, blocked = false) => new Response(JSON.stringify({ message, blocked }), { status, headers });
 
@@ -13,15 +14,13 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json("Only POST requests are allowed.", 405);
   try {
-    const parsed = bodySchema.safeParse(await req.json());
-    if (!parsed.success) return json("A valid admin password is required.", 400);
+    const parsed = bodySchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) return json("A valid admin session is required.", 400);
     const apiKey = Deno.env.get("LOVABLE_API_KEY");
     if (!apiKey) return json("AI summary connection is not configured.", 401);
     const mongo = await familyStore();
-    const admin = await mongo.admin.findOne({ _id: "family-tree" });
-    if (!admin?.passwordHash) return json("Existing admin password is unavailable.", 503);
-    const check = { data: await verifyPassword(parsed.data.password, admin.passwordHash), error: null };
-    if (!hasAdminAccess(check)) return json("Admin password is incorrect. Please log in again.", 403);
+    const check = { data: await verifySession(mongo, parsed.data.token), error: null };
+    if (!hasAdminAccess(check)) return json("Admin session expired. Please log in again.", 401);
     const saved = await readFamily(mongo);
     if (!saved) return json("Unable to load the saved family tree.", 503);
     const pause = saved.aiBlock;
