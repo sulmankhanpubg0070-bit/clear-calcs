@@ -181,35 +181,45 @@ const FamilyTree = () => {
 
       <div className="pointer-events-none absolute -bottom-20 -left-20 h-64 w-64 rounded-full bg-accent/30 blur-[120px]" />
 
-      {/* Centered website identity and admin control */}
-      <header className="relative z-10 flex w-full flex-col items-center gap-3 text-center">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary/20 text-primary">
-          <TreePine className="h-6 w-6" aria-hidden="true" />
+      {/* Brand at left, admin actions at right */}
+      <header className="relative z-10 flex w-full items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/20 text-primary">
+            <TreePine className="h-6 w-6" aria-hidden="true" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="break-words text-xl font-bold leading-tight text-foreground sm:text-2xl [overflow-wrap:anywhere]">
+              {title}
+            </h1>
+            <p className="text-xs text-muted-foreground">{members.length} members</p>
+          </div>
         </div>
-        <div className="w-full min-w-0">
-          <h1 className="break-words text-2xl font-bold text-foreground [overflow-wrap:anywhere]">
-            {title}
-          </h1>
-          <p className="text-xs text-muted-foreground">{members.length} members</p>
-        </div>
-        <AdminButton
-          password={password}
-          onLogin={login}
-          onLogout={logout}
-          title={title}
-          saveTitle={saveTitle}
-          members={members}
-          openAdd={openAdd}
-          openEdit={openEdit}
-          remove={remove}
-          exportJson={exportJson}
-          importJson={importJson}
-        />
+        <div className="flex shrink-0 items-center gap-2">
+          <AdminButton
+            password={password}
+            onLogin={login}
+            onLogout={logout}
+            title={title}
+            saveTitle={saveTitle}
+            members={members}
+            openAdd={openAdd}
+            openEdit={openEdit}
+            remove={remove}
+            exportJson={exportJson}
+            importJson={importJson}
+          />
           {isAdmin && (
-            <Button onClick={openAdd} className="shadow-[0_0_20px_hsl(var(--primary)/0.4)]">
-              <Plus className="mr-1 h-4 w-4" /> Add member
+            <Button
+              onClick={openAdd}
+              aria-label="Add member"
+              title="Add member"
+              className="h-11 w-11 shrink-0 p-0 shadow-[0_0_20px_hsl(var(--primary)/0.4)] sm:h-10 sm:w-auto sm:px-3"
+            >
+              <Plus className="h-4 w-4 sm:mr-1" />
+              <span className="sr-only sm:not-sr-only">Add member</span>
             </Button>
           )}
+        </div>
       </header>
 
       <FamilyInfo title={title} members={members} />
