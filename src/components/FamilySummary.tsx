@@ -3,6 +3,7 @@ import { Sparkles, RefreshCw, Square, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface Props { password: string; memberCount: number }
+type Chunk = { text?: string; message?: string; blocked?: boolean };
 
 export default function FamilySummary({ password, memberCount }: Props) {
   const [summary, setSummary] = useState("");
@@ -26,9 +27,10 @@ export default function FamilySummary({ password, memberCount }: Props) {
         body: JSON.stringify({ password, accessRestored }), signal: abort.signal,
       });
       if (!response.ok) {
-        const payload = await response.json();
+        // The error body may not be JSON (gateway/proxy errors), so never let parsing hide the real problem.
+        const payload: Chunk = await response.json().catch(() => ({}));
         setBlocked(Boolean(payload.blocked));
-        throw new Error(payload.message || "Unable to generate summary.");
+        throw new Error(payload.message || `Unable to generate summary (error ${response.status}).`);
       }
       setBlocked(false);
       if (!response.body) throw new Error("AI returned no summary.");
@@ -43,7 +45,8 @@ export default function FamilySummary({ password, memberCount }: Props) {
         pending = lines.pop() || "";
         for (const line of lines) {
           if (!line.trim()) continue;
-          const chunk = JSON.parse(line);
+          let chunk: Chunk;
+          try { chunk = JSON.parse(line); } catch { throw new Error("AI summary was interrupted. Please try again."); }
           if (chunk.message) { setBlocked(Boolean(chunk.blocked)); throw new Error(chunk.message); }
           if (chunk.text) { text += chunk.text; setSummary(text); }
         }
