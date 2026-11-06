@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Sparkles, RefreshCw, Square, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-interface Props { password: string; memberCount: number }
+interface Props { token: string; memberCount: number }
 type Chunk = { text?: string; message?: string; blocked?: boolean };
 
-export default function FamilySummary({ password, memberCount }: Props) {
+export default function FamilySummary({ token, memberCount }: Props) {
   const [summary, setSummary] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -24,7 +24,7 @@ export default function FamilySummary({ password, memberCount }: Props) {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/family-summary`, {
         method: "POST",
         headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
-        body: JSON.stringify({ password, accessRestored }), signal: abort.signal,
+        body: JSON.stringify({ token, accessRestored }), signal: abort.signal,
       });
       if (!response.ok) {
         // The error body may not be JSON (gateway/proxy errors), so never let parsing hide the real problem.

@@ -1,4 +1,4 @@
-import type { Member } from "@/components/FamilyTree";
+import type { Member } from "@/lib/types";
 
 /** Add or update one member, keeping spouse links symmetric on both sides. */
 export function upsertMember(current: Member[], m: Member): Member[] {
@@ -27,6 +27,18 @@ export function removeMember(current: Member[], id: string): Member[] {
     }));
 }
 
+const YEAR = /^\d{3,4}$/;
+const PHONE = /^[0-9+\-\s()]{3,32}$/;
+const cleanYear = (v: unknown) => {
+  const s = v === undefined || v === null ? "" : String(v).trim();
+  return YEAR.test(s) ? s : undefined;
+};
+const cleanPhone = (v: unknown) => {
+  const s = typeof v === "string" ? v.trim() : "";
+  return PHONE.test(s) ? s : undefined;
+};
+const cleanPhoto = (v: unknown) => (typeof v === "string" && v.startsWith("data:image/") && v.length <= 30000 ? v : undefined);
+
 /**
  * Validate imported JSON and keep only the fields the server accepts.
  * Returns null when the data is not a usable member list.
@@ -40,12 +52,14 @@ export function sanitizeMembers(raw: unknown): Member[] | null {
     if (typeof r.id !== "string" || !r.id) return null;
     if (typeof r.name !== "string" || !r.name.trim()) return null;
     const gender = r.gender === "male" || r.gender === "female" ? r.gender : "other";
-    const birthYear = r.birthYear === undefined || r.birthYear === null || r.birthYear === "" ? undefined : String(r.birthYear);
     out.push({
       id: r.id,
       name: r.name.trim(),
       gender,
-      birthYear,
+      birthYear: cleanYear(r.birthYear),
+      deathYear: cleanYear(r.deathYear),
+      phone: cleanPhone(r.phone),
+      photo: cleanPhoto(r.photo),
       parentId: typeof r.parentId === "string" ? r.parentId : null,
       spouseId: typeof r.spouseId === "string" ? r.spouseId : null,
     });
