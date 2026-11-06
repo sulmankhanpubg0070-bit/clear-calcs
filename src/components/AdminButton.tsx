@@ -44,7 +44,13 @@ const AdminButton = (p: AdminButtonProps) => {
   useEffect(() => setTitleDraft(p.title), [p.title]);
   useEffect(() => {
     if (open && !p.password)
-      hasAdminPassword().then(setHasPw).catch((error) => setError(error.message));
+      hasAdminPassword()
+        .then(setHasPw)
+        .catch((error) => {
+          // If the check fails, still let the owner try to log in; the server decides if the password is right.
+          setError(error.message);
+          setHasPw(true);
+        });
   }, [open, p.password]);
 
   const submit = async () => {
@@ -76,7 +82,12 @@ const AdminButton = (p: AdminButtonProps) => {
         accept="application/json"
         id="admin-import-input"
         className="hidden"
-        onChange={(e) => e.target.files?.[0] && p.importJson(e.target.files[0])}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) p.importJson(file);
+          // Reset so choosing the same file again still triggers an import.
+          e.target.value = "";
+        }}
       />
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild>

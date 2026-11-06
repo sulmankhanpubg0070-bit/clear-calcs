@@ -20,7 +20,8 @@ import {
 import { Plus, Pencil, Trash2, Users, Download, Upload, TreePine } from "lucide-react";
 import AdminButton from "@/components/AdminButton";
 import FamilyInfo from "@/components/FamilyInfo";
-import { loadFamily, saveFamily } from "@/lib/family-storage";
+import { ApiError, loadFamily, saveFamily } from "@/lib/family-storage";
+import { removeMember, sanitizeMembers, upsertMember } from "@/lib/family-members";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -35,19 +36,11 @@ export interface Member {
   spouseId?: string | null;
 }
 
-
-const seed: Member[] = [
-  { id: "1", name: "Dada", gender: "male", birthYear: "1945", spouseId: "2" },
-  { id: "2", name: "Dadi", gender: "female", birthYear: "1948", spouseId: "1" },
-  { id: "3", name: "Papa", gender: "male", birthYear: "1972", parentId: "1", spouseId: "4" },
-  { id: "4", name: "Mummy", gender: "female", birthYear: "1975", spouseId: "3" },
-  { id: "5", name: "Aap", gender: "other", birthYear: "2000", parentId: "3" },
-];
-
 const PW_KEY = "family-tree:admin";
 
 const FamilyTree = () => {
-  const [members, setMembersRaw] = useState<Member[]>(seed);
+  // Start empty: if loading fails we must not show made-up sample people as if they were the real tree.
+  const [members, setMembersRaw] = useState<Member[]>([]);
   const [title, setTitle] = useState("Family Tree");
   const [password, setPassword] = useState<string | null>(() => sessionStorage.getItem(PW_KEY));
   const isAdmin = !!password;
@@ -57,17 +50,16 @@ const FamilyTree = () => {
 
   useEffect(() => {
     let active = true;
-    loadFamily().then((data) => {
-      if (active) {
+    loadFamily()
+      .then((data) => {
+        if (!active) return;
         setTitle(data.title);
         setMembersRaw(data.members ?? []);
         setLoaded(true);
-        if (data.migrationError) toast.error(data.migrationError, { duration: 10000 });
-        if (data.hasPassword !== undefined && data.members && data.members.length > 0) {
-          toast.success("✅ MongoDB connected - Data loaded from separate collections!");
-        }
-      }
-    }).catch(() => toast.error("Unable to load saved family data."));
+      })
+      .catch((error) => {
+        if (active) toast.error(error instanceof Error ? error.message : "Unable to load saved family data.");
+      });
     return () => { active = false; };
   }, []);
 
@@ -75,19 +67,11 @@ const FamilyTree = () => {
     document.title = title;
   }, [title]);
 
-  const setMembers: typeof setMembersRaw = (v) => {
-    if (!isAdmin || !loaded) return;
-    setMembersRaw(v);
-  };
-
   const persist = async (t: string, m: Member[]) => {
-    if (!password || !loaded) throw new Error("Wait for saved data to load.");
+    if (!password || !loaded) throw new Error("Saved data did not load. Refresh the page before saving.");
     await saveFamily(password, t, m);
   };
 
-  const saveTitle = (t: string) => {
-    persist(t, members).then(() => { setTitle(t); toast.success("Title saved"); }).catch((error) => toast.error("Save failed: " + error.message));
-  };
   const login = (pw: string) => {
     sessionStorage.setItem(PW_KEY, pw);
     setPassword(pw);
@@ -97,33 +81,41 @@ const FamilyTree = () => {
     setPassword(null);
   };
 
-  const upsert = (currentMembers: Member[], m: Member): Member[] => {
-    const next = currentMembers.map((p) => {
-      if (p.id === m.id) return m;
-      // Sync spouse symmetry
-      if (p.id === m.spouseId) return { ...p, spouseId: m.id };
-      if (p.spouseId === m.id && p.id !== m.spouseId) return p;
-      if (p.id !== m.id && p.spouseId === m.id && m.spouseId !== p.id) {
-        return { ...p, spouseId: undefined };
+  /**
+   * Save first, show second. The screen only changes after the server confirmed the save,
+   * so a failed save can never look like a successful one until the next reload.
+   */
+  const commit = async (t: string, m: Member[]) => {
+    try {
+      await persist(t, m);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        logout();
+        throw new Error("Admin password is no longer valid. Please log in again.");
       }
-      return p;
-    });
-    const exists = currentMembers.find((p) => p.id === m.id);
-    const result = exists ? next : [...next, m];
-    return result;
+      if (error instanceof ApiError && error.status === 409) {
+        const latest = await loadFamily().catch(() => null);
+        if (latest) {
+          setTitle(latest.title);
+          setMembersRaw(latest.members ?? []);
+        }
+        throw new Error("The tree changed elsewhere. The latest data was reloaded; please try again.");
+      }
+      throw error;
+    }
+    setTitle(t);
+    setMembersRaw(m);
+  };
+
+  const saveTitle = (t: string) => {
+    commit(t, members)
+      .then(() => toast.success("Title saved"))
+      .catch((error) => toast.error("Save failed: " + (error instanceof Error ? error.message : "unknown error")));
   };
 
   const remove = async (id: string) => {
-    const updatedMembers = members
-      .filter((m) => m.id !== id)
-      .map((m) => ({
-        ...m,
-        parentId: m.parentId === id ? null : m.parentId,
-        spouseId: m.spouseId === id ? null : m.spouseId,
-      }));
-    setMembers(updatedMembers);
     try {
-      await persist(title, updatedMembers);
+      await commit(title, removeMember(members, id));
       toast.success("Member removed");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Remove failed");
@@ -154,21 +146,22 @@ const FamilyTree = () => {
   const importJson = async (file: File) => {
     const reader = new FileReader();
     reader.onload = async () => {
+      let data: Member[] | null = null;
       try {
-        const data = JSON.parse(String(reader.result));
-        if (Array.isArray(data)) {
-          setMembers(data);
-          try {
-            await persist(title, data);
-            toast.success("Tree imported");
-          } catch (error) {
-            toast.error(error instanceof Error ? error.message : "Import failed");
-          }
-        } else {
-          toast.error("Invalid file");
-        }
+        data = sanitizeMembers(JSON.parse(String(reader.result)));
       } catch {
+        data = null;
+      }
+      if (!data) {
         toast.error("Invalid file");
+        return;
+      }
+      if (!window.confirm(`Import replaces all current members with ${data.length} from the file. Continue?`)) return;
+      try {
+        await commit(title, data);
+        toast.success("Tree imported");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Import failed");
       }
     };
     reader.readAsText(file);
@@ -248,9 +241,7 @@ const FamilyTree = () => {
         members={members}
         setMembers={setMembersRaw}
         onSave={async (m) => {
-          const updatedMembers = upsert(members, m);
-          setMembersRaw(updatedMembers);
-          await persist(title, updatedMembers);
+          await commit(title, upsertMember(members, m));
         }}
       />
     </div>
